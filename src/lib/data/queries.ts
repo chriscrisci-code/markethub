@@ -1,22 +1,29 @@
 import { createClient } from "@/lib/supabase/server";
 import type { DashboardStats, ItemWithRelations } from "@/lib/types/database";
+import type { OrderWithRelations } from "@/lib/types/orders";
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   const supabase = await createClient();
 
-  const [itemsResult, publishedResult, ordersResult] = await Promise.all([
-    supabase.from("items").select("id", { count: "exact", head: true }),
-    supabase
-      .from("channel_listings")
-      .select("item_id", { count: "exact", head: true })
-      .eq("sync_status", "published"),
-    supabase.from("orders").select("id", { count: "exact", head: true }),
-  ]);
+  const [itemsResult, publishedResult, ordersResult, attentionResult] =
+    await Promise.all([
+      supabase.from("items").select("id", { count: "exact", head: true }),
+      supabase
+        .from("channel_listings")
+        .select("item_id", { count: "exact", head: true })
+        .eq("sync_status", "published"),
+      supabase.from("orders").select("id", { count: "exact", head: true }),
+      supabase
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .in("status", ["pending", "processing"]),
+    ]);
 
   return {
     totalItems: itemsResult.count ?? 0,
     publishedItems: publishedResult.count ?? 0,
     totalOrders: ordersResult.count ?? 0,
+    ordersNeedingAttention: attentionResult.count ?? 0,
   };
 }
 
@@ -167,4 +174,70 @@ export async function getArtworkUrl(storagePath: string): Promise<string | null>
     .createSignedUrl(storagePath, 3600);
 
   return data?.signedUrl ?? null;
+}
+
+export async function getOrders(): Promise<OrderWithRelations[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("orders")
+    .select(
+      `
+      *,
+      order_line_items (*),
+      fulfillment_jobs (*),
+      order_costs (*),
+      source_connector:source_connector_key (display_name)
+    `
+    )
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("getOrders error:", error.message);
+    return [];
+  }
+
+  return (data ?? []).map(normalizeOrder) as unknown as OrderWithRelations[];
+}
+
+export async function getOrder(
+  orderId: string
+): Promise<OrderWithRelations | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("orders")
+    .select(
+      `
+      *,
+      order_line_items (*),
+      fulfillment_jobs (*),
+      order_costs (*),
+      source_connector:source_connector_key (display_name)
+    `
+    )
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("getOrder error:", error.message);
+    return null;
+  }
+
+  if (!data) return null;
+  return normalizeOrder(data) as unknown as OrderWithRelations;
+}
+
+function normalizeOrder(row: Record<string, unknown>) {
+  return {
+    ...row,
+    order_line_items: Array.isArray(row.order_line_items)
+      ? row.order_line_items
+      : [],
+    fulfillment_jobs: Array.isArray(row.fulfillment_jobs)
+      ? row.fulfillment_jobs
+      : [],
+    order_costs: Array.isArray(row.order_costs) ? row.order_costs : [],
+    source_connector: row.source_connector ?? null,
+  };
 }

@@ -44,6 +44,8 @@ const mockProducts: ProviderProduct[] = [
   },
 ];
 
+const jobProgress = new Map<string, number>();
+
 export const mockFulfillmentConnector: FulfillmentConnector = {
   key: "mock-fulfillment",
   displayName: "Mock Fulfillment Provider",
@@ -99,11 +101,28 @@ export const mockFulfillmentConnector: FulfillmentConnector = {
     };
   },
 
-  async getFulfillmentStatus() {
+  async getFulfillmentStatus(jobRef) {
+    const id = String(jobRef ?? "unknown");
+    const step = (jobProgress.get(id) ?? 0) + 1;
+    jobProgress.set(id, step);
+
+    if (step >= 2) {
+      return {
+        status: "shipped",
+        trackingNumber: `MOCK${id.slice(-6).toUpperCase()}`,
+        carrier: "USPS",
+      };
+    }
+
     return {
       status: "in_production",
-      trackingNumber: "MOCK123456",
-      carrier: "USPS",
     };
+  },
+
+  async getBilling(jobRef) {
+    const id = String(jobRef ?? "unknown");
+    const step = jobProgress.get(id) ?? 0;
+    if (step < 2) return null;
+    return { amountCents: 1240, confirmed: true };
   },
 };

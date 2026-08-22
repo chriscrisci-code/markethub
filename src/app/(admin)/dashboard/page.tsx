@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getDashboardStats } from "@/lib/data/queries";
 import { AlertCircle, Package, ShoppingBag, Store } from "lucide-react";
@@ -52,10 +53,20 @@ export default async function DashboardPage() {
           <CardTitle>Needs Attention</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Nothing needs your attention right now. Orders, sync errors, and
-            inventory warnings will appear here as you connect sales channels.
-          </p>
+          {stats.ordersNeedingAttention > 0 ? (
+            <p className="text-sm">
+              <Link href="/orders" className="font-medium underline">
+                {stats.ordersNeedingAttention} order
+                {stats.ordersNeedingAttention === 1 ? "" : "s"}
+              </Link>{" "}
+              pending or in fulfillment need your attention.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Nothing needs your attention right now. New orders and sync issues
+              will appear here.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

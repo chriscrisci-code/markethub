@@ -113,4 +113,5 @@ export interface DashboardStats {
   totalItems: number;
   publishedItems: number;
   totalOrders: number;
+  ordersNeedingAttention: number;
 }

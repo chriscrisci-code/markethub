@@ -32,6 +32,10 @@ export const mockMarketplaceConnector: MarketplaceConnector = {
   async importOrders() {
     return [];
   },
+
+  async updateOrderTracking() {
+    return;
+  },
 };
 
 export const marketHubStoreConnector: MarketplaceConnector = {
@@ -62,5 +66,9 @@ export const marketHubStoreConnector: MarketplaceConnector = {
 
   async importOrders() {
     return [];
+  },
+
+  async updateOrderTracking() {
+    return;
   },
 };
