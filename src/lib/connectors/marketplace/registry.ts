@@ -36,7 +36,8 @@ export function getChannelStatuses(
       connectorKey: marketplace.key,
       displayName: marketplace.display_name,
       syncStatus,
-      canPublish: syncStatus === "not_published",
+      canPublish:
+        syncStatus === "not_published" || syncStatus === "sync_error",
       canUpdate: syncStatus === "published",
     };
   });

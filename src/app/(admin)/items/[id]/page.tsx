@@ -101,7 +101,7 @@ export default async function ItemDetailPage({
           <CardTitle>Sales Channels</CardTitle>
         </CardHeader>
         <CardContent>
-          <ChannelStatusCards channels={channelStatuses} />
+          <ChannelStatusCards itemId={item.id} channels={channelStatuses} />
         </CardContent>
       </Card>
     </div>
