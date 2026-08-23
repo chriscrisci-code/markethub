@@ -122,13 +122,15 @@ export interface FulfillmentConnector {
     productId: string;
     color: string;
     size: string;
-    areaId: string;
-    artworkUrl: string;
-    areaWidthPx: number;
-    areaHeightPx: number;
-    placement: MasterDesign["placement"];
-    artworkWidthPx: number;
-    artworkHeightPx: number;
+    files: Array<{
+      areaId: string;
+      artworkUrl: string;
+      areaWidthPx: number;
+      areaHeightPx: number;
+      placement: MasterDesign["placement"];
+      artworkWidthPx: number;
+      artworkHeightPx: number;
+    }>;
   }): Promise<{ taskKey: string }>;
   getMockupTask?(taskKey: string): Promise<ProviderMockupResult>;
   validateDesign(

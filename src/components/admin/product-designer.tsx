@@ -191,21 +191,49 @@ export function ProductDesigner({
   }, [providerKey, selectedProduct, sideAreas, selectedColors]);
 
   async function handleGenerateMockup() {
-    const printableArea = sideAreas[activeSide];
-    const artworkUrl = artworkUrls[activeSide];
-    const placement = placements[activeSide];
-    const artworkSize = artworkSizes[activeSide];
-
-    if (!selectedProduct || !printableArea || !artworkUrl) {
-      toast.error(`Upload ${activeSide} artwork and select a product first.`);
+    if (!selectedProduct) {
+      toast.error("Select a product first.");
       return;
     }
     if (!previewColor || !previewSize) {
       toast.error("Select at least one color and size for the mockup.");
       return;
     }
-    if (artworkSize.width <= 0 || artworkSize.height <= 0) {
-      toast.error("Wait for artwork to finish loading, then try again.");
+
+    const files = (["front", "back"] as const).flatMap((side) => {
+      const area = sideAreas[side];
+      const url = artworkUrls[side];
+      const size = artworkSizes[side];
+      if (!area || !url) return [];
+      if (size.width <= 0 || size.height <= 0) return [];
+
+      // Don't send a mirrored/synthetic back placement to Printful — it fails the task.
+      if (side === "back") {
+        const hasRealBack = selectedProduct.printableAreas.some(
+          (a) =>
+            a.id.toLowerCase() === "back" ||
+            a.label.toLowerCase().includes("back")
+        );
+        if (!hasRealBack) return [];
+      }
+
+      return [
+        {
+          areaId: area.id,
+          artworkUrl: url,
+          areaWidthPx: area.widthPx,
+          areaHeightPx: area.heightPx,
+          placement: placements[side],
+          artworkWidthPx: size.width,
+          artworkHeightPx: size.height,
+        },
+      ];
+    });
+
+    if (files.length === 0) {
+      toast.error(
+        "Upload artwork and wait for it to load on at least one side (front or back)."
+      );
       return;
     }
 
@@ -218,13 +246,7 @@ export function ProductDesigner({
       productId: selectedProduct.id,
       color: previewColor,
       size: previewSize,
-      areaId: printableArea.id,
-      artworkUrl,
-      areaWidthPx: printableArea.widthPx,
-      areaHeightPx: printableArea.heightPx,
-      placement,
-      artworkWidthPx: artworkSize.width,
-      artworkHeightPx: artworkSize.height,
+      files,
     });
 
     if (started.error || !started.taskKey) {
@@ -263,7 +285,9 @@ export function ProductDesigner({
         if (urls.length === 0) {
           setMockupError("Task completed but no mockup images were returned.");
         } else {
-          toast.success("Mockup ready.");
+          toast.success(
+            `Mockup ready (${urls.length} image${urls.length === 1 ? "" : "s"}).`
+          );
         }
         return;
       }
@@ -637,45 +661,27 @@ export function ProductDesigner({
               <div>
                 <h3 className="text-sm font-semibold tracking-tight">Mockup</h3>
                 <p className="text-xs text-muted-foreground">
-                  Generate a Printful mockup for the selected side.
+                  Sends front and back artwork together so Printful can return
+                  both views.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={activeSide === "front" ? "default" : "outline"}
-                  onClick={() => setActiveSide("front")}
-                >
-                  Front
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={activeSide === "back" ? "default" : "outline"}
-                  disabled={!sideAreas.back}
-                  onClick={() => setActiveSide("back")}
-                >
-                  Back
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={
-                    isPending ||
-                    mockupStatus === "pending" ||
-                    !artworkUrls[activeSide] ||
-                    providerKey !== "printful"
-                  }
-                  onClick={() => {
-                    void handleGenerateMockup();
-                  }}
-                >
-                  {mockupStatus === "pending"
-                    ? "Generating…"
-                    : "Generate mockup"}
-                </Button>
-              </div>
+              <Button
+                type="button"
+                size="sm"
+                disabled={
+                  isPending ||
+                  mockupStatus === "pending" ||
+                  (!artworkUrls.front && !artworkUrls.back) ||
+                  providerKey !== "printful"
+                }
+                onClick={() => {
+                  void handleGenerateMockup();
+                }}
+              >
+                {mockupStatus === "pending"
+                  ? "Generating…"
+                  : "Generate mockup"}
+              </Button>
             </div>
 
             {providerKey !== "printful" ? (
@@ -709,7 +715,7 @@ export function ProductDesigner({
               </div>
             ) : mockupStatus === "idle" && providerKey === "printful" ? (
               <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-                Generate a mockup to see the real garment render here.
+                Generate a mockup to see front and back garment renders here.
               </div>
             ) : null}
           </div>

@@ -4,11 +4,7 @@ import { getFulfillmentConnector } from "@/lib/connectors/fulfillment/registry";
 import type { ProviderMockupResult } from "@/lib/connectors/fulfillment/types";
 import type { DesignPlacement } from "@/lib/types/database";
 
-export async function startProviderMockup(input: {
-  providerKey: string;
-  productId: string;
-  color: string;
-  size: string;
+export type MockupFileInput = {
   areaId: string;
   artworkUrl: string;
   areaWidthPx: number;
@@ -16,11 +12,25 @@ export async function startProviderMockup(input: {
   placement: DesignPlacement;
   artworkWidthPx: number;
   artworkHeightPx: number;
+};
+
+export async function startProviderMockup(input: {
+  providerKey: string;
+  productId: string;
+  color: string;
+  size: string;
+  files: MockupFileInput[];
 }): Promise<{ taskKey?: string; error?: string }> {
   const connector = getFulfillmentConnector(input.providerKey);
   if (!connector?.startMockupGeneration) {
     return {
       error: "This fulfillment provider does not support mockup generation yet.",
+    };
+  }
+
+  if (!input.files.length) {
+    return {
+      error: "Upload front and/or back artwork before generating a mockup.",
     };
   }
 
