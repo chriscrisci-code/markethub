@@ -7,23 +7,11 @@ import { Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { clearArtwork, uploadArtwork } from "@/lib/actions/items";
+import {
+  clearArtworkClient,
+  uploadArtworkClient,
+} from "@/lib/artwork/client";
 import type { ArtworkSide } from "@/lib/types/database";
-
-const CLEAR_TIMEOUT_MS = 12_000;
-
-function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  message: string
-): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new Error(message)), ms);
-    }),
-  ]);
-}
 
 export function ArtworkUpload({
   itemId,
@@ -42,17 +30,34 @@ export function ArtworkUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
+  const [localFilename, setLocalFilename] = useState<string | null>(null);
   const [clearedLocally, setClearedLocally] = useState(false);
   const title = label ?? (side === "back" ? "Back" : "Front");
 
-  const displayUrl = clearedLocally ? null : artworkUrl;
-  const displayFilename = clearedLocally ? null : filename;
+  const displayUrl = clearedLocally
+    ? null
+    : localPreviewUrl ?? artworkUrl;
+  const displayFilename = clearedLocally
+    ? null
+    : localFilename ?? filename;
 
   useEffect(() => {
     if (artworkUrl) {
       setClearedLocally(false);
+      setLocalPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setLocalFilename(null);
     }
   }, [artworkUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+    };
+  }, [localPreviewUrl]);
 
   const ALLOWED_TYPES = new Set([
     "image/png",
@@ -62,23 +67,43 @@ export function ArtworkUpload({
 
   async function uploadFile(file: File) {
     if (!ALLOWED_TYPES.has(file.type)) {
-      toast.error("Use a PNG or JPG file. Printful mockups reject WebP, HEIC, and SVG.");
+      toast.error(
+        "Use a PNG or JPG file. Printful mockups reject WebP, HEIC, and SVG."
+      );
       return;
     }
 
-    const formData = new FormData();
-    formData.set("artwork", file);
-
+    const preview = URL.createObjectURL(file);
+    setLocalPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return preview;
+    });
+    setLocalFilename(file.name);
+    setClearedLocally(false);
     setIsBusy(true);
+
     try {
-      const result = await uploadArtwork(itemId, formData, side);
+      const result = await uploadArtworkClient(itemId, file, side);
       if (result.error) {
         toast.error(result.error);
+        setLocalPreviewUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return null;
+        });
+        setLocalFilename(null);
       } else {
         toast.success(`${title} artwork uploaded.`);
-        setClearedLocally(false);
         router.refresh();
       }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Upload failed."
+      );
+      setLocalPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setLocalFilename(null);
     } finally {
       setIsBusy(false);
     }
@@ -89,19 +114,21 @@ export function ArtworkUpload({
     event.stopPropagation();
 
     setClearedLocally(true);
+    setLocalPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setLocalFilename(null);
     setIsBusy(true);
 
     try {
-      const result = await withTimeout(
-        clearArtwork(itemId, side),
-        CLEAR_TIMEOUT_MS,
-        "Clear timed out. Refresh the page if the image is still showing."
-      );
+      const result = await clearArtworkClient(itemId, side);
       if (result.error) {
         setClearedLocally(false);
         toast.error(result.error);
       } else {
         toast.success(`${title} artwork cleared.`);
+        router.refresh();
       }
     } catch (error) {
       setClearedLocally(false);
@@ -110,7 +137,6 @@ export function ArtworkUpload({
       );
     } finally {
       setIsBusy(false);
-      router.refresh();
     }
   }
 
@@ -207,7 +233,9 @@ export function ArtworkUpload({
       </div>
 
       {displayFilename ? (
-        <p className="text-xs text-muted-foreground truncate">{displayFilename}</p>
+        <p className="text-xs text-muted-foreground truncate">
+          {displayFilename}
+        </p>
       ) : null}
 
       <input
