@@ -1,7 +1,15 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,12 +18,12 @@ import {
   approveDesignAdjustment,
   proposeDesignAutoFix,
   revertDesignAdjustment,
-  updateArtworkDimensions,
   validateItemDesign,
 } from "@/lib/actions/design";
 import {
   saveItemDesignClient,
   saveItemVariantsClient,
+  updateArtworkDimensionsClient,
 } from "@/lib/design/client";
 import {
   DEFAULT_PLACEMENT,
@@ -90,6 +98,7 @@ export function ProductDesigner({
   const [isPending, startTransition] = useTransition();
   const [isSaving, setIsSaving] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const isSavingRef = useRef(false);
   const [selectedProductId, setSelectedProductId] = useState(
     initialDesign?.provider_product_ref?.id ?? products[0]?.id ?? ""
   );
@@ -337,7 +346,7 @@ export function ProductDesigner({
         ...prev,
         [side]: { width, height },
       }));
-      void updateArtworkDimensions(itemId, width, height, side);
+      void updateArtworkDimensionsClient(itemId, width, height, side);
     },
     [itemId]
   );
@@ -427,9 +436,14 @@ export function ProductDesigner({
       toast.error("Choose a product first.");
       return;
     }
-    if (isSaving) return;
+    if (isSavingRef.current) return;
 
-    setIsSaving(true);
+    isSavingRef.current = true;
+    flushSync(() => {
+      setIsSaving(true);
+    });
+
+    let succeeded = false;
     try {
       const result = await saveItemDesignClient(itemId, {
         providerProductRef: productRef,
@@ -449,14 +463,23 @@ export function ProductDesigner({
         return;
       }
 
-      toast.success("Design saved.");
-      setValidation({ status: "idle" });
+      succeeded = true;
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Could not save design."
       );
     } finally {
-      setIsSaving(false);
+      isSavingRef.current = false;
+      // Force the button out of "Saving…" before the toast — updates after
+      // await can otherwise stay deferred behind in-flight server work.
+      flushSync(() => {
+        setIsSaving(false);
+      });
+    }
+
+    if (succeeded) {
+      setValidation({ status: "idle" });
+      toast.success("Design saved.");
     }
   }
 

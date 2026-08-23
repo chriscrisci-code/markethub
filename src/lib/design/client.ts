@@ -11,16 +11,23 @@ function withTimeout<T>(
   ms = CLIENT_TIMEOUT_MS
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
+    let settled = false;
     const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
       reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s.`));
     }, ms);
 
     Promise.resolve(promise).then(
       (value) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         resolve(value);
       },
       (error) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         reject(error);
       }
@@ -129,6 +136,43 @@ export async function saveItemVariantsClient(
     return {
       error:
         error instanceof Error ? error.message : "Could not save variants.",
+    };
+  }
+}
+
+/** Persist measured artwork pixel size for one side (best-effort). */
+export async function updateArtworkDimensionsClient(
+  itemId: string,
+  widthPx: number,
+  heightPx: number,
+  side: "front" | "back" = "front"
+): Promise<{ success?: true; error?: string }> {
+  try {
+    const { supabase, error: authError } = await requireAuthUser();
+    if (authError) {
+      return { error: authError };
+    }
+
+    const { error } = await withTimeout(
+      supabase
+        .from("item_artwork")
+        .update({ width_px: widthPx, height_px: heightPx })
+        .eq("item_id", itemId)
+        .eq("side", side),
+      "Updating artwork size"
+    );
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not update artwork size.",
     };
   }
 }
