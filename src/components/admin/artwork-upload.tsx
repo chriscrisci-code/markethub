@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   clearArtworkClient,
+  signArtworkStoragePath,
   uploadArtworkClient,
 } from "@/lib/artwork/client";
+import type { ArtworkSideState } from "@/lib/artwork/client";
 import type { ArtworkSide } from "@/lib/types/database";
 
 export function ArtworkUpload({
@@ -19,12 +21,14 @@ export function ArtworkUpload({
   label,
   artworkUrl,
   filename,
+  onArtworkChanged,
 }: {
   itemId: string;
   side?: ArtworkSide;
   label?: string;
   artworkUrl: string | null;
   filename: string | null;
+  onArtworkChanged?: (side: ArtworkSide, next: ArtworkSideState | null) => void;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -93,6 +97,16 @@ export function ArtworkUpload({
         setLocalFilename(null);
       } else {
         toast.success(`${title} artwork uploaded.`);
+        let signedUrl: string | null = null;
+        if (result.storagePath) {
+          const signed = await signArtworkStoragePath(result.storagePath);
+          signedUrl = signed.url ?? null;
+        }
+        onArtworkChanged?.(side, {
+          url: signedUrl,
+          storagePath: result.storagePath ?? null,
+          filename: file.name,
+        });
         router.refresh();
       }
     } catch (error) {
@@ -128,6 +142,7 @@ export function ArtworkUpload({
         toast.error(result.error);
       } else {
         toast.success(`${title} artwork cleared.`);
+        onArtworkChanged?.(side, null);
         router.refresh();
       }
     } catch (error) {

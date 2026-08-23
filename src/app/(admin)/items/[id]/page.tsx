@@ -1,9 +1,12 @@
 import { notFound } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArtworkUpload } from "@/components/admin/artwork-upload";
 import { ChannelStatusCards } from "@/components/admin/channel-status-cards";
+import {
+  ItemArtworkCard,
+  ItemArtworkProvider,
+  ItemProductDesignerCard,
+} from "@/components/admin/item-artwork-shell";
 import { ItemForm } from "@/components/admin/item-form";
-import { ProductDesigner } from "@/components/admin/product-designer";
 import { getFulfillmentConnector } from "@/lib/connectors/fulfillment/registry";
 import { getChannelStatuses } from "@/lib/connectors/marketplace/registry";
 import {
@@ -15,7 +18,6 @@ import {
 } from "@/lib/data/queries";
 import { artworkBySide } from "@/lib/domain/artwork-sides";
 
-/** Allow longer server actions (e.g. Printful mockup start) on this page. */
 export const maxDuration = 60;
 
 export default async function ItemDetailPage({
@@ -77,80 +79,56 @@ export default async function ItemDetailPage({
   );
 
   return (
-    <div className="space-y-8">
-      <div>
-        <p className="text-sm text-muted-foreground">Item</p>
-        <h1 className="text-3xl font-semibold tracking-tight">{item.name}</h1>
-      </div>
+    <ItemArtworkProvider
+      itemId={item.id}
+      initialArtworkUrls={{ front: frontUrl, back: backUrl }}
+      initialArtworkStoragePaths={{
+        front: bySide.front?.storage_path ?? null,
+        back: bySide.back?.storage_path ?? null,
+      }}
+      initialFilenames={{
+        front: bySide.front?.original_filename ?? null,
+        back: bySide.back?.original_filename ?? null,
+      }}
+    >
+      <div className="space-y-8">
+        <div>
+          <p className="text-sm text-muted-foreground">Item</p>
+          <h1 className="text-3xl font-semibold tracking-tight">{item.name}</h1>
+        </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Basics</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ItemForm item={item} fulfillmentProviders={fulfillmentProviders} />
+            </CardContent>
+          </Card>
+
+          <ItemArtworkCard />
+        </div>
+
+        <ItemProductDesignerCard
+          providerKey={providerKey}
+          salePriceCents={item.base_price_cents}
+          products={products}
+          initialDesign={item.item_designs}
+          initialVariants={item.item_variants}
+          initialAdjustments={item.provider_design_adjustments}
+          catalogError={catalogError}
+        />
+
         <Card>
           <CardHeader>
-            <CardTitle>Basics</CardTitle>
+            <CardTitle>Sales Channels</CardTitle>
           </CardHeader>
           <CardContent>
-            <ItemForm item={item} fulfillmentProviders={fulfillmentProviders} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Artwork</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-6 sm:grid-cols-2">
-              <ArtworkUpload
-                itemId={item.id}
-                side="front"
-                artworkUrl={frontUrl}
-                filename={bySide.front?.original_filename ?? null}
-              />
-              <ArtworkUpload
-                itemId={item.id}
-                side="back"
-                artworkUrl={backUrl}
-                filename={bySide.back?.original_filename ?? null}
-              />
-            </div>
+            <ChannelStatusCards itemId={item.id} channels={channelStatuses} />
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Product Designer</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {catalogError ? (
-            <p className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-              {catalogError}
-            </p>
-          ) : null}
-          <ProductDesigner
-            itemId={item.id}
-            providerKey={providerKey}
-            salePriceCents={item.base_price_cents}
-            artworkUrls={{ front: frontUrl, back: backUrl }}
-            artworkStoragePaths={{
-              front: bySide.front?.storage_path ?? null,
-              back: bySide.back?.storage_path ?? null,
-            }}
-            products={products}
-            initialDesign={item.item_designs}
-            initialVariants={item.item_variants}
-            initialAdjustments={item.provider_design_adjustments}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Sales Channels</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ChannelStatusCards itemId={item.id} channels={channelStatuses} />
-        </CardContent>
-      </Card>
-    </div>
+    </ItemArtworkProvider>
   );
 }

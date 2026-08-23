@@ -4,6 +4,12 @@ import { normalizePrintableAreas } from "@/lib/domain/artwork-sides";
 import { createClient } from "@/lib/supabase/client";
 import type { ArtworkSide } from "@/lib/types/database";
 
+export type ArtworkSideState = {
+  url: string | null;
+  storagePath: string | null;
+  filename: string | null;
+};
+
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/jpg"]);
 
 type ArtworkRow = { id: string; storage_path: string; side?: string | null };
@@ -47,7 +53,7 @@ export async function uploadArtworkClient(
   itemId: string,
   file: File,
   side: ArtworkSide = "front"
-): Promise<{ success?: true; error?: string }> {
+): Promise<{ success?: true; storagePath?: string; error?: string }> {
   if (!file || file.size === 0) {
     return { error: "Please choose an image file." };
   }
@@ -101,7 +107,26 @@ export async function uploadArtworkClient(
     return { error: upsertError.message };
   }
 
-  return { success: true };
+  return { success: true, storagePath };
+}
+
+/** Sign a storage path for display or Printful mockup use. */
+export async function signArtworkStoragePath(
+  storagePath: string,
+  expiresInSeconds = 3600
+): Promise<{ url?: string; error?: string }> {
+  const supabase = createClient();
+  const { data, error } = await supabase.storage
+    .from("artwork")
+    .createSignedUrl(storagePath, expiresInSeconds);
+
+  if (error || !data?.signedUrl) {
+    return {
+      error: error?.message ?? "Could not sign artwork URL.",
+    };
+  }
+
+  return { url: data.signedUrl };
 }
 
 /** Clear artwork for one side and remove that side's saved placement. */

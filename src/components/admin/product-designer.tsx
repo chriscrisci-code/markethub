@@ -24,9 +24,9 @@ import { formatCents } from "@/lib/domain/format";
 import { getProductSideAreas } from "@/lib/domain/artwork-sides";
 import { fetchProviderTemplate } from "@/lib/actions/templates";
 import {
-  pollProviderMockup,
-  startProviderMockup,
-} from "@/lib/actions/mockups";
+  pollMockupViaApi,
+  startMockupViaApi,
+} from "@/lib/mockups/client";
 import type {
   ProviderProduct,
   ProviderTemplate,
@@ -70,7 +70,6 @@ export function ProductDesigner({
   providerKey,
   salePriceCents,
   artworkUrls,
-  artworkStoragePaths,
   products,
   initialDesign,
   initialVariants,
@@ -80,7 +79,6 @@ export function ProductDesigner({
   providerKey: string;
   salePriceCents: number;
   artworkUrls: Record<ArtworkSide, string | null>;
-  artworkStoragePaths: Record<ArtworkSide, string | null>;
   products: ProviderProduct[];
   initialDesign: ItemDesign | null;
   initialVariants: ItemVariant[];
@@ -218,17 +216,16 @@ export function ProductDesigner({
     setMockupProgress("Resolving variant → create-task…");
 
     const MOCKUP_START_TIMEOUT_MS = 45_000;
-    let started: Awaited<ReturnType<typeof startProviderMockup>>;
+    let started: Awaited<ReturnType<typeof startMockupViaApi>>;
     try {
       started = await Promise.race([
-        startProviderMockup({
+        startMockupViaApi({
           providerKey,
           productId: selectedProduct.id,
           color: previewColor,
           size: previewSize,
           areaId: area.id || "front",
           artworkUrl,
-          artworkStoragePath: artworkStoragePaths.front,
           areaWidthPx: area.widthPx,
           areaHeightPx: area.heightPx,
           placement,
@@ -274,7 +271,7 @@ export function ProductDesigner({
 
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 2500));
-      const polled = await pollProviderMockup(providerKey, taskKey);
+      const polled = await pollMockupViaApi(providerKey, taskKey);
       if (polled.error) {
         setMockupStatus("failed");
         setMockupProgress(null);
