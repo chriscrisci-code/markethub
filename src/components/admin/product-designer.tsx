@@ -437,11 +437,6 @@ export function ProductDesigner({
           areaHeightInches={printableArea.heightInches}
           placement={placement}
           template={template}
-          garmentColorHex={
-            selectedColors[0]
-              ? selectedProduct.colorHexByName?.[selectedColors[0]] ?? null
-              : null
-          }
           previewPlacement={
             proposedAdjustment?.status === "proposed"
               ? (proposedAdjustment.adjustment as DesignPlacement)

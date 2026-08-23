@@ -63,7 +63,6 @@ export function PlacementCanvas({
   placement,
   previewPlacement,
   template,
-  garmentColorHex,
   onChange,
   onArtworkSize,
 }: {
@@ -75,17 +74,12 @@ export function PlacementCanvas({
   placement: DesignPlacement;
   previewPlacement?: DesignPlacement | null;
   template?: ProviderTemplate | null;
-  /** Printful color_code (or similar) for the primary selected color. */
-  garmentColorHex?: string | null;
   onChange: (placement: DesignPlacement) => void;
   onArtworkSize?: (width: number, height: number) => void;
 }) {
   const activePlacement = previewPlacement ?? placement;
   const artwork = useHtmlImage(artworkUrl);
   const templateImage = useHtmlImage(template?.imageUrl ?? null, {
-    cors: false,
-  });
-  const backgroundImage = useHtmlImage(template?.backgroundUrl ?? null, {
     cors: false,
   });
   const imageRef = useRef<Konva.Image>(null);
@@ -97,11 +91,6 @@ export function PlacementCanvas({
 
   // Layout: either print-area-only stage, or full template with print area region
   const hasTemplate = Boolean(template && templateImage);
-
-  const fillColor =
-    garmentColorHex ||
-    template?.backgroundColor ||
-    null;
 
   const display = useMemo(() => {
     if (hasTemplate && template) {
@@ -379,46 +368,16 @@ export function PlacementCanvas({
             onPointerLeave={() => setCursor(null)}
           >
             <Stage width={display.stageWidth} height={display.stageHeight}>
-              {/* Colored garment photo (when Printful provides background_url) */}
-              {backgroundImage ? (
-                <Layer listening={false}>
-                  <KonvaImage
-                    image={backgroundImage}
-                    x={0}
-                    y={0}
-                    width={display.stageWidth}
-                    height={display.stageHeight}
-                  />
-                </Layer>
-              ) : null}
-
-              {/*
-                Template + optional hex tint. Same layer so multiply works.
-                destination-out clears the print area (transparent checkerboard).
-              */}
+              {/* Template outline; punch print area so it stays transparent */}
               <Layer listening={false}>
                 {hasTemplate && templateImage && template ? (
                   <>
-                    {!backgroundImage && fillColor ? (
-                      <Rect
-                        x={0}
-                        y={0}
-                        width={display.stageWidth}
-                        height={display.stageHeight}
-                        fill={fillColor}
-                      />
-                    ) : null}
                     <KonvaImage
                       image={templateImage}
                       x={0}
                       y={0}
                       width={display.stageWidth}
                       height={display.stageHeight}
-                      globalCompositeOperation={
-                        !backgroundImage && fillColor
-                          ? "multiply"
-                          : "source-over"
-                      }
                     />
                     <Rect
                       x={display.printLeft}
