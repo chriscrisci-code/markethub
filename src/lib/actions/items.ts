@@ -7,6 +7,42 @@ import { normalizePrintableAreas } from "@/lib/domain/artwork-sides";
 import { parseDollarsToCents } from "@/lib/domain/format";
 import type { ArtworkSide } from "@/lib/types/database";
 
+type ArtworkRow = { id: string; storage_path: string; side?: string };
+
+async function findArtworkForSide(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  itemId: string,
+  side: ArtworkSide
+): Promise<{ row: ArtworkRow | null; error?: string }> {
+  const { data, error } = await supabase
+    .from("item_artwork")
+    .select("id, storage_path, side")
+    .eq("item_id", itemId)
+    .eq("side", side)
+    .maybeSingle();
+
+  if (error) {
+    return { row: null, error: error.message };
+  }
+  if (data) {
+    return { row: data };
+  }
+
+  // Legacy rows uploaded before side column was reliable
+  const { data: rows, error: listError } = await supabase
+    .from("item_artwork")
+    .select("id, storage_path, side")
+    .eq("item_id", itemId);
+
+  if (listError) {
+    return { row: null, error: listError.message };
+  }
+
+  const needle = `/${side}-`;
+  const match = (rows ?? []).find((row) => row.storage_path.includes(needle));
+  return { row: match ?? null };
+}
+
 async function requireUser() {
   const supabase = await createClient();
   const {
@@ -160,19 +196,20 @@ export async function clearArtwork(
 ) {
   const { supabase } = await requireUser();
 
-  const { data: artwork, error: fetchError } = await supabase
-    .from("item_artwork")
-    .select("id, storage_path")
-    .eq("item_id", itemId)
-    .eq("side", side)
-    .maybeSingle();
+  const { row: artwork, error: fetchError } = await findArtworkForSide(
+    supabase,
+    itemId,
+    side
+  );
 
   if (fetchError) {
-    return { error: fetchError.message };
+    return { error: fetchError };
   }
 
   if (!artwork) {
-    return { error: `No ${side} artwork to clear.` };
+    revalidatePath("/items");
+    revalidatePath(`/items/${itemId}`);
+    return { success: true };
   }
 
   if (artwork.storage_path) {
@@ -197,14 +234,10 @@ export async function clearArtwork(
   if (design) {
     const areas = { ...normalizePrintableAreas(design.printable_areas) };
     delete areas[side];
-    const { error: designError } = await supabase
+    await supabase
       .from("item_designs")
       .update({ printable_areas: areas })
       .eq("item_id", itemId);
-
-    if (designError) {
-      return { error: designError.message };
-    }
   }
 
   revalidatePath("/items");

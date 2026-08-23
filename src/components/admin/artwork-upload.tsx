@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,8 +23,9 @@ export function ArtworkUpload({
   artworkUrl: string | null;
   filename: string | null;
 }) {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isBusy, setIsBusy] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const title = label ?? (side === "back" ? "Back" : "Front");
 
@@ -33,7 +35,7 @@ export function ArtworkUpload({
     "image/jpg",
   ]);
 
-  function uploadFile(file: File) {
+  async function uploadFile(file: File) {
     if (!ALLOWED_TYPES.has(file.type)) {
       toast.error("Use a PNG or JPG file. Printful mockups reject WebP, HEIC, and SVG.");
       return;
@@ -42,28 +44,36 @@ export function ArtworkUpload({
     const formData = new FormData();
     formData.set("artwork", file);
 
-    startTransition(async () => {
+    setIsBusy(true);
+    try {
       const result = await uploadArtwork(itemId, formData, side);
       if (result.error) {
         toast.error(result.error);
       } else {
         toast.success(`${title} artwork uploaded.`);
+        router.refresh();
       }
-    });
+    } finally {
+      setIsBusy(false);
+    }
   }
 
-  function handleClear(event: React.MouseEvent) {
+  async function handleClear(event: React.MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
 
-    startTransition(async () => {
+    setIsBusy(true);
+    try {
       const result = await clearArtwork(itemId, side);
       if (result.error) {
         toast.error(result.error);
       } else {
         toast.success(`${title} artwork cleared.`);
+        router.refresh();
       }
-    });
+    } finally {
+      setIsBusy(false);
+    }
   }
 
   function handleDragOver(event: React.DragEvent) {
@@ -93,7 +103,7 @@ export function ArtworkUpload({
 
     const file = event.dataTransfer.files?.[0];
     if (file) {
-      uploadFile(file);
+      void uploadFile(file);
     }
   }
 
@@ -106,8 +116,8 @@ export function ArtworkUpload({
             type="button"
             variant="ghost"
             size="sm"
-            disabled={isPending}
-            onClick={handleClear}
+            disabled={isBusy}
+            onClick={(event) => void handleClear(event)}
             className="h-8 gap-1.5 text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="size-3.5" />
@@ -118,7 +128,7 @@ export function ArtworkUpload({
       <div
         role="button"
         tabIndex={0}
-        onClick={() => !isPending && inputRef.current?.click()}
+        onClick={() => !isBusy && inputRef.current?.click()}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
@@ -132,7 +142,7 @@ export function ArtworkUpload({
         className={cn(
           "relative flex min-h-36 cursor-pointer items-center justify-center rounded-xl border border-dashed bg-muted/30 p-4 transition-colors",
           isDragging && "border-foreground bg-muted",
-          isPending && "pointer-events-none opacity-60"
+          isBusy && "pointer-events-none opacity-60"
         )}
       >
         {artworkUrl && !isDragging ? (
@@ -149,8 +159,8 @@ export function ArtworkUpload({
             <Upload className="mx-auto mb-2 size-6 opacity-50" />
             {isDragging
               ? "Drop to upload"
-              : isPending
-                ? "Uploading..."
+              : isBusy
+                ? "Working…"
                 : `Drop or click for ${title.toLowerCase()} art (PNG/JPG)`}
           </div>
         )}
@@ -169,7 +179,7 @@ export function ArtworkUpload({
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (file) {
-            uploadFile(file);
+            void uploadFile(file);
             event.target.value = "";
           }
         }}
@@ -179,10 +189,10 @@ export function ArtworkUpload({
         type="button"
         variant="outline"
         size="sm"
-        disabled={isPending}
+        disabled={isBusy}
         onClick={() => inputRef.current?.click()}
       >
-        {isPending ? "Working..." : `Choose ${title}`}
+        {isBusy ? "Working…" : `Choose ${title}`}
       </Button>
     </div>
   );
