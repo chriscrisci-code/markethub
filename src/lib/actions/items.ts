@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { normalizePrintableAreas } from "@/lib/domain/artwork-sides";
 import { parseDollarsToCents } from "@/lib/domain/format";
+import type { ArtworkSide } from "@/lib/types/database";
 
 async function requireUser() {
   const supabase = await createClient();
@@ -144,6 +146,65 @@ export async function uploadArtwork(
 
   if (upsertError) {
     return { error: upsertError.message };
+  }
+
+  revalidatePath("/items");
+  revalidatePath(`/items/${itemId}`);
+  return { success: true };
+}
+
+/** Remove artwork for one side and clear that side's saved placement. */
+export async function clearArtwork(
+  itemId: string,
+  side: ArtworkSide = "front"
+) {
+  const { supabase } = await requireUser();
+
+  const { data: artwork, error: fetchError } = await supabase
+    .from("item_artwork")
+    .select("id, storage_path")
+    .eq("item_id", itemId)
+    .eq("side", side)
+    .maybeSingle();
+
+  if (fetchError) {
+    return { error: fetchError.message };
+  }
+
+  if (!artwork) {
+    return { error: `No ${side} artwork to clear.` };
+  }
+
+  if (artwork.storage_path) {
+    await supabase.storage.from("artwork").remove([artwork.storage_path]);
+  }
+
+  const { error: deleteError } = await supabase
+    .from("item_artwork")
+    .delete()
+    .eq("id", artwork.id);
+
+  if (deleteError) {
+    return { error: deleteError.message };
+  }
+
+  const { data: design } = await supabase
+    .from("item_designs")
+    .select("printable_areas")
+    .eq("item_id", itemId)
+    .maybeSingle();
+
+  if (design) {
+    const areas = { ...normalizePrintableAreas(design.printable_areas) };
+    delete areas[side];
+    const { error: designError } = await supabase
+      .from("item_designs")
+      .update({ printable_areas: areas })
+      .eq("item_id", itemId);
+
+    if (designError) {
+      return { error: designError.message };
+    }
   }
 
   revalidatePath("/items");

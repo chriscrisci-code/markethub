@@ -2,11 +2,11 @@
 
 import { useRef, useState, useTransition } from "react";
 import Image from "next/image";
-import { Upload } from "lucide-react";
+import { Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { uploadArtwork } from "@/lib/actions/items";
+import { clearArtwork, uploadArtwork } from "@/lib/actions/items";
 import type { ArtworkSide } from "@/lib/types/database";
 
 export function ArtworkUpload({
@@ -52,6 +52,20 @@ export function ArtworkUpload({
     });
   }
 
+  function handleClear(event: React.MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    startTransition(async () => {
+      const result = await clearArtwork(itemId, side);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success(`${title} artwork cleared.`);
+      }
+    });
+  }
+
   function handleDragOver(event: React.DragEvent) {
     event.preventDefault();
     event.stopPropagation();
@@ -85,7 +99,22 @@ export function ArtworkUpload({
 
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium">{title}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium">{title}</p>
+        {artworkUrl ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={isPending}
+            onClick={handleClear}
+            className="h-8 gap-1.5 text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="size-3.5" />
+            Clear
+          </Button>
+        ) : null}
+      </div>
       <div
         role="button"
         tabIndex={0}
@@ -101,7 +130,7 @@ export function ArtworkUpload({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={cn(
-          "flex min-h-36 cursor-pointer items-center justify-center rounded-xl border border-dashed bg-muted/30 p-4 transition-colors",
+          "relative flex min-h-36 cursor-pointer items-center justify-center rounded-xl border border-dashed bg-muted/30 p-4 transition-colors",
           isDragging && "border-foreground bg-muted",
           isPending && "pointer-events-none opacity-60"
         )}
@@ -153,7 +182,7 @@ export function ArtworkUpload({
         disabled={isPending}
         onClick={() => inputRef.current?.click()}
       >
-        {isPending ? "Uploading..." : `Choose ${title}`}
+        {isPending ? "Working..." : `Choose ${title}`}
       </Button>
     </div>
   );
