@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getMarketplaceConnector } from "@/lib/connectors/marketplace/registry";
 import type { MasterItem } from "@/lib/connectors/marketplace/types";
+import { primaryArtwork } from "@/lib/domain/artwork-sides";
+import type { ItemArtwork } from "@/lib/types/database";
 
 async function requireUser() {
   const supabase = await createClient();
@@ -33,9 +35,7 @@ async function loadMasterItem(itemId: string) {
     return { error: error?.message ?? "Item not found." };
   }
 
-  const artwork = Array.isArray(data.item_artwork)
-    ? data.item_artwork[0] ?? null
-    : data.item_artwork ?? null;
+  const artwork = primaryArtwork(data.item_artwork as ItemArtwork[]);
 
   const masterItem: MasterItem = {
     ...(data as MasterItem),

@@ -212,9 +212,11 @@ export async function sendOrderToFulfillment(orderId: string) {
     const design = Array.isArray(itemRow?.item_designs)
       ? itemRow?.item_designs[0]
       : itemRow?.item_designs;
-    const artwork = Array.isArray(itemRow?.item_artwork)
-      ? itemRow?.item_artwork[0]
-      : itemRow?.item_artwork;
+    const artworkRows = Array.isArray(itemRow?.item_artwork)
+      ? itemRow.item_artwork
+      : itemRow?.item_artwork
+        ? [itemRow.item_artwork]
+        : [];
     const variants = Array.isArray(itemRow?.item_variants)
       ? itemRow.item_variants
       : [];
@@ -223,24 +225,44 @@ export async function sendOrderToFulfillment(orderId: string) {
       | { id?: string; areaId?: string }
       | null
       | undefined;
-    const printableArea = design?.printable_area as
-      | { areaId?: string }
-      | null
-      | undefined;
 
-    if (!productRef?.id || !artwork?.storage_path) {
+    const { artworkBySide, normalizePrintableAreas } = await import(
+      "@/lib/domain/artwork-sides"
+    );
+    const bySide = artworkBySide(
+      artworkRows as import("@/lib/types/database").ItemArtwork[]
+    );
+    const areas = normalizePrintableAreas(
+      (design as { printable_areas?: unknown; printable_area?: unknown } | null)
+        ?.printable_areas ??
+        (design as { printable_area?: unknown } | null)?.printable_area
+    );
+
+    if (!productRef?.id || (!bySide.front && !bySide.back)) {
       return {
         error:
           "Printful fulfillment needs a saved Printful product design and uploaded artwork on the item.",
       };
     }
 
-    const { data: signed } = await supabase.storage
-      .from("artwork")
-      .createSignedUrl(artwork.storage_path, 60 * 60 * 24);
+    const files: Array<{ type: string; url: string }> = [];
+    for (const side of ["front", "back"] as const) {
+      const art = bySide[side];
+      if (!art?.storage_path) continue;
+      const { data: signed } = await supabase.storage
+        .from("artwork")
+        .createSignedUrl(art.storage_path, 60 * 60 * 24);
+      if (!signed?.signedUrl) {
+        return { error: `Could not create a signed URL for ${side} artwork.` };
+      }
+      files.push({
+        type: areas[side]?.areaId || side,
+        url: signed.signedUrl,
+      });
+    }
 
-    if (!signed?.signedUrl) {
-      return { error: "Could not create a signed URL for artwork." };
+    if (files.length === 0) {
+      return { error: "Could not create signed URLs for artwork." };
     }
 
     const { resolvePrintfulVariantId } = await import(
@@ -277,12 +299,7 @@ export async function sendOrderToFulfillment(orderId: string) {
         variantId,
         quantity: lineItems[0]?.quantity ?? 1,
         name: itemRow?.name ?? lineItems[0]?.label ?? "Item",
-        files: [
-          {
-            type: printableArea?.areaId || productRef.areaId || "front",
-            url: signed.signedUrl,
-          },
-        ],
+        files,
       },
     ];
   }

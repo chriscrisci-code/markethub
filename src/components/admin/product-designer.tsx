@@ -15,19 +15,28 @@ import {
   updateArtworkDimensions,
   validateItemDesign,
 } from "@/lib/actions/design";
-import { DEFAULT_PLACEMENT, estimateMarginCents, fitPlacementToArea } from "@/lib/domain/design";
+import {
+  DEFAULT_PLACEMENT,
+  estimateMarginCents,
+  fitPlacementToArea,
+} from "@/lib/domain/design";
 import { formatCents } from "@/lib/domain/format";
+import { getProductSideAreas } from "@/lib/domain/artwork-sides";
 import { fetchProviderTemplate } from "@/lib/actions/templates";
 import {
   pollProviderMockup,
   startProviderMockup,
 } from "@/lib/actions/mockups";
-import type { ProviderProduct, ProviderTemplate } from "@/lib/connectors/fulfillment/types";
 import type {
+  ProviderProduct,
+  ProviderTemplate,
+} from "@/lib/connectors/fulfillment/types";
+import type {
+  ArtworkSide,
   DesignPlacement,
   ItemDesign,
   ItemVariant,
-  PrintableAreaState,
+  PrintableAreasMap,
   ProviderDesignAdjustmentRow,
   ProviderProductRef,
 } from "@/lib/types/database";
@@ -60,7 +69,7 @@ export function ProductDesigner({
   itemId,
   providerKey,
   salePriceCents,
-  artworkUrl,
+  artworkUrls,
   products,
   initialDesign,
   initialVariants,
@@ -69,7 +78,7 @@ export function ProductDesigner({
   itemId: string;
   providerKey: string;
   salePriceCents: number;
-  artworkUrl: string | null;
+  artworkUrls: Record<ArtworkSide, string | null>;
   products: ProviderProduct[];
   initialDesign: ItemDesign | null;
   initialVariants: ItemVariant[];
@@ -82,10 +91,29 @@ export function ProductDesigner({
   const selectedProduct =
     products.find((p) => p.id === selectedProductId) ?? products[0] ?? null;
 
-  const initialArea = initialDesign?.printable_area;
-  const [placement, setPlacement] = useState<DesignPlacement>(
-    initialArea?.placement ?? DEFAULT_PLACEMENT
+  const sideAreas = useMemo(
+    () =>
+      selectedProduct
+        ? getProductSideAreas(selectedProduct)
+        : { front: null, back: null },
+    [selectedProduct]
   );
+
+  const [activeSide, setActiveSide] = useState<ArtworkSide>("front");
+  const [placements, setPlacements] = useState<
+    Record<ArtworkSide, DesignPlacement>
+  >(() => ({
+    front:
+      initialDesign?.printable_areas?.front?.placement ?? DEFAULT_PLACEMENT,
+    back: initialDesign?.printable_areas?.back?.placement ?? DEFAULT_PLACEMENT,
+  }));
+  const [artworkSizes, setArtworkSizes] = useState<
+    Record<ArtworkSide, { width: number; height: number }>
+  >({
+    front: { width: 0, height: 0 },
+    back: { width: 0, height: 0 },
+  });
+
   const [selectedColors, setSelectedColors] = useState<string[]>(() => {
     const colors = new Set(
       initialVariants
@@ -106,7 +134,6 @@ export function ProductDesigner({
       ? Array.from(sizes)
       : selectedProduct?.sizes.slice(0, 2) ?? [];
   });
-  const [artworkSize, setArtworkSize] = useState({ width: 0, height: 0 });
   const [validation, setValidation] = useState<ValidationState>({
     status: "idle",
   });
@@ -121,13 +148,24 @@ export function ProductDesigner({
   const [mockupUrls, setMockupUrls] = useState<string[]>([]);
   const [mockupError, setMockupError] = useState<string | null>(null);
 
-  const printableArea = selectedProduct?.printableAreas[0] ?? null;
+  // If active side isn't available on this product, fall back to front
+  useEffect(() => {
+    if (activeSide === "back" && !sideAreas.back) {
+      setActiveSide("front");
+    }
+  }, [activeSide, sideAreas.back]);
+
+  const printableArea =
+    activeSide === "back" ? sideAreas.back : sideAreas.front;
+  const artworkUrl = artworkUrls[activeSide];
+  const placement = placements[activeSide];
+  const artworkSize = artworkSizes[activeSide];
+
   const previewColor = selectedColors[0] ?? null;
   const previewColorHex = previewColor
     ? selectedProduct?.colorHexByName?.[previewColor] ?? null
     : null;
-  const previewSize =
-    selectedSizes[0] ?? selectedProduct?.sizes[0] ?? null;
+  const previewSize = selectedSizes[0] ?? selectedProduct?.sizes[0] ?? null;
 
   useEffect(() => {
     if (!selectedProduct || !printableArea) {
@@ -154,7 +192,7 @@ export function ProductDesigner({
 
   async function handleGenerateMockup() {
     if (!selectedProduct || !printableArea || !artworkUrl) {
-      toast.error("Upload artwork and select a product first.");
+      toast.error(`Upload ${activeSide} artwork and select a product first.`);
       return;
     }
     if (!previewColor || !previewSize) {
@@ -238,34 +276,47 @@ export function ProductDesigner({
 
   const handleArtworkSize = useCallback(
     (width: number, height: number) => {
-      setArtworkSize({ width, height });
-      void updateArtworkDimensions(itemId, width, height);
+      setArtworkSizes((prev) => ({
+        ...prev,
+        [activeSide]: { width, height },
+      }));
+      void updateArtworkDimensions(itemId, width, height, activeSide);
     },
-    [itemId]
+    [itemId, activeSide]
   );
+
+  function setActivePlacement(next: DesignPlacement) {
+    setPlacements((prev) => ({ ...prev, [activeSide]: next }));
+  }
 
   function handleProductChange(productId: string) {
     const product = products.find((p) => p.id === productId);
     setSelectedProductId(productId);
     setValidation({ status: "idle" });
     setProposedAdjustment(null);
+    setActiveSide("front");
 
     if (product) {
       setSelectedColors(product.colors.slice(0, 1));
       setSelectedSizes(product.sizes.slice(0, 2));
-      const area = product.printableAreas[0];
-      if (area && artworkSize.width > 0) {
-        setPlacement(
-          fitPlacementToArea(
-            artworkSize.width,
-            artworkSize.height,
+      const sides = getProductSideAreas(product);
+      const next: Record<ArtworkSide, DesignPlacement> = {
+        front: DEFAULT_PLACEMENT,
+        back: DEFAULT_PLACEMENT,
+      };
+      for (const side of ["front", "back"] as const) {
+        const area = sides[side];
+        const size = artworkSizes[side];
+        if (area && size.width > 0) {
+          next[side] = fitPlacementToArea(
+            size.width,
+            size.height,
             area.widthPx,
             area.heightPx
-          )
-        );
-      } else {
-        setPlacement(DEFAULT_PLACEMENT);
+          );
+        }
       }
+      setPlacements(next);
     }
   }
 
@@ -281,34 +332,39 @@ export function ProductDesigner({
     }
   }
 
-  function buildPrintableAreaState(): PrintableAreaState | null {
-    if (!printableArea) return null;
-    return {
-      areaId: printableArea.id,
-      label: printableArea.label,
-      widthPx: printableArea.widthPx,
-      heightPx: printableArea.heightPx,
-      widthInches: printableArea.widthInches,
-      heightInches: printableArea.heightInches,
-      placement,
-    };
+  function buildPrintableAreasMap(): PrintableAreasMap {
+    const map: PrintableAreasMap = {};
+    for (const side of ["front", "back"] as const) {
+      const area = sideAreas[side];
+      if (!area) continue;
+      map[side] = {
+        areaId: area.id,
+        label: area.label,
+        widthPx: area.widthPx,
+        heightPx: area.heightPx,
+        widthInches: area.widthInches,
+        heightInches: area.heightInches,
+        placement: placements[side],
+      };
+    }
+    return map;
   }
 
   function buildProductRef(): ProviderProductRef | null {
-    if (!selectedProduct || !printableArea) return null;
+    if (!selectedProduct || !sideAreas.front) return null;
     return {
       id: selectedProduct.id,
       name: selectedProduct.name,
       category: selectedProduct.category,
       baseCostCents: selectedProduct.baseCostCents,
-      areaId: printableArea.id,
+      areaId: sideAreas.front.id,
     };
   }
 
   function handleSaveDesign() {
     const productRef = buildProductRef();
-    const area = buildPrintableAreaState();
-    if (!productRef || !area) {
+    const areas = buildPrintableAreasMap();
+    if (!productRef || !areas.front) {
       toast.error("Choose a product first.");
       return;
     }
@@ -316,7 +372,7 @@ export function ProductDesigner({
     startTransition(async () => {
       const result = await saveItemDesign(itemId, {
         providerProductRef: productRef,
-        printableArea: area,
+        printableAreas: areas,
       });
       if (result.error) {
         toast.error(result.error);
@@ -339,17 +395,16 @@ export function ProductDesigner({
 
   function handleValidate() {
     startTransition(async () => {
-      // Save current design first so validation uses latest placement
       const productRef = buildProductRef();
-      const area = buildPrintableAreaState();
-      if (productRef && area) {
+      const areas = buildPrintableAreasMap();
+      if (productRef && areas.front) {
         await saveItemDesign(itemId, {
           providerProductRef: productRef,
-          printableArea: area,
+          printableAreas: areas,
         });
       }
 
-      const result = await validateItemDesign(itemId);
+      const result = await validateItemDesign(itemId, activeSide);
       if (result.error) {
         toast.error(result.error);
         return;
@@ -357,7 +412,7 @@ export function ProductDesigner({
 
       if (result.valid) {
         setValidation({ status: "valid" });
-        toast.success("Design looks good for this provider.");
+        toast.success(`${activeSide} design looks good for this provider.`);
       } else {
         setValidation({
           status: "invalid",
@@ -371,7 +426,7 @@ export function ProductDesigner({
 
   function handleAutoFix() {
     startTransition(async () => {
-      const result = await proposeDesignAutoFix(itemId);
+      const result = await proposeDesignAutoFix(itemId, activeSide);
       if (result.error) {
         toast.error(result.error);
         return;
@@ -414,7 +469,7 @@ export function ProductDesigner({
     });
   }
 
-  if (!selectedProduct || !printableArea) {
+  if (!selectedProduct || !sideAreas.front) {
     return (
       <p className="text-sm text-muted-foreground">
         No fulfillment products available from this provider yet.
@@ -424,6 +479,31 @@ export function ProductDesigner({
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={activeSide === "front" ? "default" : "outline"}
+          onClick={() => setActiveSide("front")}
+        >
+          Front
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={activeSide === "back" ? "default" : "outline"}
+          disabled={!sideAreas.back}
+          onClick={() => setActiveSide("back")}
+        >
+          Back
+        </Button>
+        {!sideAreas.back ? (
+          <span className="self-center text-xs text-muted-foreground">
+            This product has no back print area
+          </span>
+        ) : null}
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-4">
           <div className="space-y-2">
@@ -439,11 +519,14 @@ export function ProductDesigner({
                 </option>
               ))}
             </select>
-            <p className="text-xs text-muted-foreground">
-              Max print: {printableArea.label} · {printableArea.widthInches}
-              &quot; × {printableArea.heightInches}&quot; (
-              {printableArea.widthPx} × {printableArea.heightPx} px)
-            </p>
+            {printableArea ? (
+              <p className="text-xs text-muted-foreground">
+                {activeSide === "back" ? "Back" : "Front"} max print:{" "}
+                {printableArea.label} · {printableArea.widthInches}&quot; ×{" "}
+                {printableArea.heightInches}&quot; ({printableArea.widthPx} ×{" "}
+                {printableArea.heightPx} px)
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-2">
@@ -524,32 +607,37 @@ export function ProductDesigner({
         </div>
 
         <div className="space-y-6">
-          <PlacementCanvas
-            artworkUrl={artworkUrl}
-            areaWidthPx={printableArea.widthPx}
-            areaHeightPx={printableArea.heightPx}
-            areaWidthInches={printableArea.widthInches}
-            areaHeightInches={printableArea.heightInches}
-            placement={placement}
-            template={template}
-            garmentColorHex={previewColorHex}
-            previewPlacement={
-              proposedAdjustment?.status === "proposed"
-                ? (proposedAdjustment.adjustment as DesignPlacement)
-                : null
-            }
-            onChange={setPlacement}
-            onArtworkSize={handleArtworkSize}
-          />
+          {printableArea ? (
+            <PlacementCanvas
+              artworkUrl={artworkUrl}
+              areaWidthPx={printableArea.widthPx}
+              areaHeightPx={printableArea.heightPx}
+              areaWidthInches={printableArea.widthInches}
+              areaHeightInches={printableArea.heightInches}
+              placement={placement}
+              template={template}
+              garmentColorHex={previewColorHex}
+              previewPlacement={
+                proposedAdjustment?.status === "proposed"
+                  ? (proposedAdjustment.adjustment as DesignPlacement)
+                  : null
+              }
+              onChange={setActivePlacement}
+              onArtworkSize={handleArtworkSize}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No printable area for this side.
+            </p>
+          )}
 
           <div className="space-y-3 rounded-xl border p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="text-sm font-semibold tracking-tight">Mockup</h3>
                 <p className="text-xs text-muted-foreground">
-                  Printful mockup generator preview for{" "}
-                  {previewColor ?? "selected color"} / {previewSize ?? "size"}{" "}
-                  using your current placement.
+                  {activeSide === "back" ? "Back" : "Front"} mockup for{" "}
+                  {previewColor ?? "selected color"} / {previewSize ?? "size"}.
                 </p>
               </div>
               <Button
@@ -698,7 +786,8 @@ export function ProductDesigner({
 
       {validation.status === "valid" ? (
         <p className="text-sm text-green-700 dark:text-green-400">
-          Design validates against this provider&apos;s printable area.
+          {activeSide === "back" ? "Back" : "Front"} design validates against
+          this provider&apos;s printable area.
         </p>
       ) : null}
 
@@ -712,7 +801,7 @@ export function ProductDesigner({
           disabled={isPending || !artworkUrl}
           onClick={handleValidate}
         >
-          Validate Design
+          Validate {activeSide === "back" ? "Back" : "Front"}
         </Button>
       </div>
     </div>

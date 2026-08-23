@@ -93,7 +93,11 @@ export default async function ItemsPage() {
                 <TableRow key={item.id}>
                   <TableCell>
                     <ItemThumbnail
-                      storagePath={item.item_artwork?.storage_path}
+                      storagePath={
+                        item.item_artwork.find((a) => a.side === "front")
+                          ?.storage_path ??
+                        item.item_artwork[0]?.storage_path
+                      }
                     />
                   </TableCell>
                   <TableCell>

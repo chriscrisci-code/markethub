@@ -13,6 +13,7 @@ import {
   getItem,
   getMarketplaceConnectors,
 } from "@/lib/data/queries";
+import { artworkBySide } from "@/lib/domain/artwork-sides";
 
 export default async function ItemDetailPage({
   params,
@@ -54,13 +55,18 @@ export default async function ItemDetailPage({
     }
   }
 
-  const [fulfillmentProviders, marketplaces, artworkUrl] = await Promise.all([
-    getFulfillmentProviders(),
-    getMarketplaceConnectors(),
-    item.item_artwork?.storage_path
-      ? getArtworkUrl(item.item_artwork.storage_path)
-      : Promise.resolve(null),
-  ]);
+  const bySide = artworkBySide(item.item_artwork);
+  const [fulfillmentProviders, marketplaces, frontUrl, backUrl] =
+    await Promise.all([
+      getFulfillmentProviders(),
+      getMarketplaceConnectors(),
+      bySide.front?.storage_path
+        ? getArtworkUrl(bySide.front.storage_path)
+        : Promise.resolve(null),
+      bySide.back?.storage_path
+        ? getArtworkUrl(bySide.back.storage_path)
+        : Promise.resolve(null),
+    ]);
 
   const channelStatuses = getChannelStatuses(
     marketplaces,
@@ -89,11 +95,20 @@ export default async function ItemDetailPage({
             <CardTitle>Artwork</CardTitle>
           </CardHeader>
           <CardContent>
-            <ArtworkUpload
-              itemId={item.id}
-              artworkUrl={artworkUrl}
-              filename={item.item_artwork?.original_filename ?? null}
-            />
+            <div className="grid gap-6 sm:grid-cols-2">
+              <ArtworkUpload
+                itemId={item.id}
+                side="front"
+                artworkUrl={frontUrl}
+                filename={bySide.front?.original_filename ?? null}
+              />
+              <ArtworkUpload
+                itemId={item.id}
+                side="back"
+                artworkUrl={backUrl}
+                filename={bySide.back?.original_filename ?? null}
+              />
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -112,7 +127,7 @@ export default async function ItemDetailPage({
             itemId={item.id}
             providerKey={providerKey}
             salePriceCents={item.base_price_cents}
-            artworkUrl={artworkUrl}
+            artworkUrls={{ front: frontUrl, back: backUrl }}
             products={products}
             initialDesign={item.item_designs}
             initialVariants={item.item_variants}

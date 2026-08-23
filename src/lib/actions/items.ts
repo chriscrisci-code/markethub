@@ -102,7 +102,11 @@ export async function updateItem(itemId: string, formData: FormData) {
   return { success: true };
 }
 
-export async function uploadArtwork(itemId: string, formData: FormData) {
+export async function uploadArtwork(
+  itemId: string,
+  formData: FormData,
+  side: "front" | "back" = "front"
+) {
   const { supabase, user } = await requireUser();
 
   const file = formData.get("artwork") as File | null;
@@ -111,7 +115,7 @@ export async function uploadArtwork(itemId: string, formData: FormData) {
   }
 
   const extension = file.name.split(".").pop() ?? "png";
-  const storagePath = `${user.id}/${itemId}/${Date.now()}.${extension}`;
+  const storagePath = `${user.id}/${itemId}/${side}-${Date.now()}.${extension}`;
 
   const { error: uploadError } = await supabase.storage
     .from("artwork")
@@ -124,10 +128,11 @@ export async function uploadArtwork(itemId: string, formData: FormData) {
   const { error: upsertError } = await supabase.from("item_artwork").upsert(
     {
       item_id: itemId,
+      side,
       storage_path: storagePath,
       original_filename: file.name,
     },
-    { onConflict: "item_id" }
+    { onConflict: "item_id,side" }
   );
 
   if (upsertError) {

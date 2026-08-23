@@ -4,9 +4,15 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { getFulfillmentConnector } from "@/lib/connectors/fulfillment/registry";
+import {
+  artworkBySide,
+  normalizePrintableAreas,
+} from "@/lib/domain/artwork-sides";
 import type {
+  ArtworkSide,
   DesignPlacement,
   PrintableAreaState,
+  PrintableAreasMap,
   ProviderProductRef,
 } from "@/lib/types/database";
 
@@ -28,7 +34,7 @@ export async function saveItemDesign(
   itemId: string,
   payload: {
     providerProductRef: ProviderProductRef;
-    printableArea: PrintableAreaState;
+    printableAreas: PrintableAreasMap;
   }
 ) {
   const { supabase } = await requireUser();
@@ -37,7 +43,7 @@ export async function saveItemDesign(
     {
       item_id: itemId,
       provider_product_ref: payload.providerProductRef,
-      printable_area: payload.printableArea,
+      printable_areas: payload.printableAreas,
     },
     { onConflict: "item_id" }
   );
@@ -77,7 +83,10 @@ export async function saveItemVariants(
   return { success: true };
 }
 
-export async function validateItemDesign(itemId: string) {
+export async function validateItemDesign(
+  itemId: string,
+  side: ArtworkSide = "front"
+) {
   const { supabase } = await requireUser();
 
   const { data: item, error } = await supabase
@@ -99,12 +108,13 @@ export async function validateItemDesign(itemId: string) {
   const design = Array.isArray(item.item_designs)
     ? item.item_designs[0]
     : item.item_designs;
-  const artwork = Array.isArray(item.item_artwork)
-    ? item.item_artwork[0]
-    : item.item_artwork;
+  const artBySide = artworkBySide(item.item_artwork);
+  const artwork = artBySide[side];
 
   if (!design || !artwork) {
-    return { error: "Upload artwork and choose a product first." };
+    return {
+      error: `Upload ${side} artwork and choose a product first.`,
+    };
   }
 
   const providerKey = item.fulfillment_provider_key ?? "mock-fulfillment";
@@ -114,7 +124,14 @@ export async function validateItemDesign(itemId: string) {
     return { error: "Fulfillment provider connector not found." };
   }
 
-  const printableArea = design.printable_area as PrintableAreaState;
+  const areas = normalizePrintableAreas(
+    design.printable_areas ?? design.printable_area
+  );
+  const printableArea = areas[side];
+  if (!printableArea) {
+    return { error: `No ${side} placement saved yet. Save design first.` };
+  }
+
   const productRef = design.provider_product_ref as ProviderProductRef;
 
   const widthPx = artwork.width_px ?? 2000;
@@ -127,8 +144,6 @@ export async function validateItemDesign(itemId: string) {
     placement: printableArea.placement,
   };
 
-  // Convert stored scale (fraction of print area width) into absolute pixel scale
-  // for connector validation that compares artwork*scale to area pixels.
   const absoluteScale =
     (printableArea.placement.scale * printableArea.widthPx) / widthPx;
 
@@ -154,7 +169,10 @@ export async function validateItemDesign(itemId: string) {
   };
 }
 
-export async function proposeDesignAutoFix(itemId: string) {
+export async function proposeDesignAutoFix(
+  itemId: string,
+  side: ArtworkSide = "front"
+) {
   const { supabase } = await requireUser();
 
   const { data: item, error } = await supabase
@@ -176,12 +194,13 @@ export async function proposeDesignAutoFix(itemId: string) {
   const design = Array.isArray(item.item_designs)
     ? item.item_designs[0]
     : item.item_designs;
-  const artwork = Array.isArray(item.item_artwork)
-    ? item.item_artwork[0]
-    : item.item_artwork;
+  const artBySide = artworkBySide(item.item_artwork);
+  const artwork = artBySide[side];
 
   if (!design || !artwork) {
-    return { error: "Upload artwork and choose a product first." };
+    return {
+      error: `Upload ${side} artwork and choose a product first.`,
+    };
   }
 
   const providerKey = item.fulfillment_provider_key ?? "mock-fulfillment";
@@ -191,7 +210,14 @@ export async function proposeDesignAutoFix(itemId: string) {
     return { error: "Fulfillment provider connector not found." };
   }
 
-  const printableArea = design.printable_area as PrintableAreaState;
+  const areas = normalizePrintableAreas(
+    design.printable_areas ?? design.printable_area
+  );
+  const printableArea = areas[side];
+  if (!printableArea) {
+    return { error: `No ${side} placement saved yet.` };
+  }
+
   const widthPx = artwork.width_px ?? 2000;
   const heightPx = artwork.height_px ?? 2000;
   const absoluteScale =
@@ -215,7 +241,6 @@ export async function proposeDesignAutoFix(itemId: string) {
     issue
   );
 
-  // Convert proposed absolute scale back to area-relative scale for storage
   const relativeScale =
     (proposal.adjustment.scale * widthPx) / printableArea.widthPx;
 
@@ -265,9 +290,6 @@ export async function approveDesignAdjustment(
     return { error: error?.message ?? "Adjustment not found." };
   }
 
-  // Apply proposed placement into a *provider-specific* record only.
-  // Master printable_area stays unchanged; we mark adjustment approved
-  // so channels/providers can use it later without mutating master.
   const { error: updateError } = await supabase
     .from("provider_design_adjustments")
     .update({ status: "approved" })
@@ -303,14 +325,16 @@ export async function revertDesignAdjustment(
 export async function updateArtworkDimensions(
   itemId: string,
   widthPx: number,
-  heightPx: number
+  heightPx: number,
+  side: ArtworkSide = "front"
 ) {
   const { supabase } = await requireUser();
 
   const { error } = await supabase
     .from("item_artwork")
     .update({ width_px: widthPx, height_px: heightPx })
-    .eq("item_id", itemId);
+    .eq("item_id", itemId)
+    .eq("side", side);
 
   if (error) {
     return { error: error.message };

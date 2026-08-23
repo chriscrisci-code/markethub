@@ -28,9 +28,12 @@ export interface Item {
   updated_at: string;
 }
 
+export type ArtworkSide = "front" | "back";
+
 export interface ItemArtwork {
   id: string;
   item_id: string;
+  side: ArtworkSide;
   storage_path: string;
   original_filename: string;
   width_px: number | null;
@@ -62,10 +65,16 @@ export interface PrintableAreaState {
   placement: DesignPlacement;
 }
 
+/** Placement state keyed by garment side. */
+export type PrintableAreasMap = {
+  front?: PrintableAreaState;
+  back?: PrintableAreaState;
+};
+
 export interface ItemDesign {
   id: string;
   item_id: string;
-  printable_area: PrintableAreaState;
+  printable_areas: PrintableAreasMap;
   provider_product_ref: ProviderProductRef;
 }
 
@@ -99,7 +108,7 @@ export interface ChannelListing {
 }
 
 export interface ItemWithRelations extends Item {
-  item_artwork: ItemArtwork | null;
+  item_artwork: ItemArtwork[];
   item_designs: ItemDesign | null;
   item_variants: ItemVariant[];
   provider_design_adjustments: ProviderDesignAdjustmentRow[];

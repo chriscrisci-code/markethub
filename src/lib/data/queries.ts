@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { normalizePrintableAreas } from "@/lib/domain/artwork-sides";
 import type { DashboardStats, ItemWithRelations } from "@/lib/types/database";
 import type { OrderWithRelations } from "@/lib/types/orders";
 
@@ -103,11 +104,35 @@ export async function getItem(itemId: string): Promise<ItemWithRelations | null>
 function normalizeItem(row: Record<string, unknown>) {
   const designs = row.item_designs;
   const artwork = row.item_artwork;
+  const designRow = Array.isArray(designs) ? designs[0] ?? null : designs ?? null;
+
+  let itemDesigns = designRow as Record<string, unknown> | null;
+  if (itemDesigns) {
+    const rawAreas =
+      itemDesigns.printable_areas ?? itemDesigns.printable_area ?? {};
+    itemDesigns = {
+      ...itemDesigns,
+      printable_areas: normalizePrintableAreas(rawAreas),
+    };
+    delete itemDesigns.printable_area;
+  }
+
+  const artworkList: unknown[] = Array.isArray(artwork)
+    ? artwork
+    : artwork
+      ? [artwork]
+      : [];
 
   return {
     ...row,
-    item_artwork: Array.isArray(artwork) ? artwork[0] ?? null : artwork ?? null,
-    item_designs: Array.isArray(designs) ? designs[0] ?? null : designs ?? null,
+    item_artwork: artworkList.map((a) => {
+      const rowArt = a as Record<string, unknown>;
+      return {
+        ...rowArt,
+        side: rowArt.side === "back" ? "back" : "front",
+      };
+    }),
+    item_designs: itemDesigns,
     item_variants: Array.isArray(row.item_variants) ? row.item_variants : [],
     channel_listings: Array.isArray(row.channel_listings)
       ? row.channel_listings
