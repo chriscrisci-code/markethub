@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { normalizePrintableAreas } from "@/lib/domain/artwork-sides";
@@ -206,42 +207,47 @@ export async function clearArtwork(
     return { error: fetchError };
   }
 
-  if (!artwork) {
+  if (artwork) {
+    const storagePath = artwork.storage_path;
+
+    const { error: deleteError } = await supabase
+      .from("item_artwork")
+      .delete()
+      .eq("id", artwork.id);
+
+    if (deleteError) {
+      return { error: deleteError.message };
+    }
+
+    // Best-effort cleanup — never block the response on storage or design writes.
+    after(async () => {
+      if (storagePath) {
+        await supabase.storage.from("artwork").remove([storagePath]);
+      }
+
+      const { data: design } = await supabase
+        .from("item_designs")
+        .select("printable_areas")
+        .eq("item_id", itemId)
+        .maybeSingle();
+
+      if (design) {
+        const areas = { ...normalizePrintableAreas(design.printable_areas) };
+        delete areas[side];
+        await supabase
+          .from("item_designs")
+          .update({ printable_areas: areas })
+          .eq("item_id", itemId);
+      }
+
+      revalidatePath("/items");
+      revalidatePath(`/items/${itemId}`);
+    });
+  } else {
     revalidatePath("/items");
     revalidatePath(`/items/${itemId}`);
-    return { success: true };
   }
 
-  if (artwork.storage_path) {
-    await supabase.storage.from("artwork").remove([artwork.storage_path]);
-  }
-
-  const { error: deleteError } = await supabase
-    .from("item_artwork")
-    .delete()
-    .eq("id", artwork.id);
-
-  if (deleteError) {
-    return { error: deleteError.message };
-  }
-
-  const { data: design } = await supabase
-    .from("item_designs")
-    .select("printable_areas")
-    .eq("item_id", itemId)
-    .maybeSingle();
-
-  if (design) {
-    const areas = { ...normalizePrintableAreas(design.printable_areas) };
-    delete areas[side];
-    await supabase
-      .from("item_designs")
-      .update({ printable_areas: areas })
-      .eq("item_id", itemId);
-  }
-
-  revalidatePath("/items");
-  revalidatePath(`/items/${itemId}`);
   return { success: true };
 }
 

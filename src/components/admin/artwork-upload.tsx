@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Trash2, Upload } from "lucide-react";
@@ -9,6 +9,21 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { clearArtwork, uploadArtwork } from "@/lib/actions/items";
 import type { ArtworkSide } from "@/lib/types/database";
+
+const CLEAR_TIMEOUT_MS = 12_000;
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]);
+}
 
 export function ArtworkUpload({
   itemId,
@@ -27,7 +42,17 @@ export function ArtworkUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [clearedLocally, setClearedLocally] = useState(false);
   const title = label ?? (side === "back" ? "Back" : "Front");
+
+  const displayUrl = clearedLocally ? null : artworkUrl;
+  const displayFilename = clearedLocally ? null : filename;
+
+  useEffect(() => {
+    if (artworkUrl) {
+      setClearedLocally(false);
+    }
+  }, [artworkUrl]);
 
   const ALLOWED_TYPES = new Set([
     "image/png",
@@ -51,6 +76,7 @@ export function ArtworkUpload({
         toast.error(result.error);
       } else {
         toast.success(`${title} artwork uploaded.`);
+        setClearedLocally(false);
         router.refresh();
       }
     } finally {
@@ -62,17 +88,29 @@ export function ArtworkUpload({
     event.preventDefault();
     event.stopPropagation();
 
+    setClearedLocally(true);
     setIsBusy(true);
+
     try {
-      const result = await clearArtwork(itemId, side);
+      const result = await withTimeout(
+        clearArtwork(itemId, side),
+        CLEAR_TIMEOUT_MS,
+        "Clear timed out. Refresh the page if the image is still showing."
+      );
       if (result.error) {
+        setClearedLocally(false);
         toast.error(result.error);
       } else {
         toast.success(`${title} artwork cleared.`);
-        router.refresh();
       }
+    } catch (error) {
+      setClearedLocally(false);
+      toast.error(
+        error instanceof Error ? error.message : "Could not clear artwork."
+      );
     } finally {
       setIsBusy(false);
+      router.refresh();
     }
   }
 
@@ -111,7 +149,7 @@ export function ArtworkUpload({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium">{title}</p>
-        {artworkUrl ? (
+        {displayUrl ? (
           <Button
             type="button"
             variant="ghost"
@@ -145,10 +183,10 @@ export function ArtworkUpload({
           isBusy && "pointer-events-none opacity-60"
         )}
       >
-        {artworkUrl && !isDragging ? (
+        {displayUrl && !isDragging ? (
           <Image
-            src={artworkUrl}
-            alt={filename ?? `${title} artwork`}
+            src={displayUrl}
+            alt={displayFilename ?? `${title} artwork`}
             width={200}
             height={200}
             className="max-h-36 w-auto rounded-lg object-contain"
@@ -160,14 +198,16 @@ export function ArtworkUpload({
             {isDragging
               ? "Drop to upload"
               : isBusy
-                ? "Working…"
+                ? clearedLocally
+                  ? "Clearing…"
+                  : "Uploading…"
                 : `Drop or click for ${title.toLowerCase()} art (PNG/JPG)`}
           </div>
         )}
       </div>
 
-      {filename ? (
-        <p className="text-xs text-muted-foreground truncate">{filename}</p>
+      {displayFilename ? (
+        <p className="text-xs text-muted-foreground truncate">{displayFilename}</p>
       ) : null}
 
       <input
@@ -192,7 +232,11 @@ export function ArtworkUpload({
         disabled={isBusy}
         onClick={() => inputRef.current?.click()}
       >
-        {isBusy ? "Working…" : `Choose ${title}`}
+        {isBusy
+          ? clearedLocally
+            ? "Clearing…"
+            : "Uploading…"
+          : `Choose ${title}`}
       </Button>
     </div>
   );
