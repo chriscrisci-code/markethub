@@ -1,4 +1,4 @@
-import { hasPrintfulToken, printfulFetch } from "./client";
+import { hasPrintfulToken, printfulFetch, uploadArtworkUrlToPrintful } from "./client";
 import type {
   BillingInfo,
   FulfillmentConnector,
@@ -106,6 +106,10 @@ const FEATURED_PRODUCT_IDS = [
 
 let productsCache: { at: number; products: ProviderProduct[] } | null = null;
 const CACHE_MS = 60 * 60 * 1000;
+
+/** Cache Printful variant lookups: productId|color|size → variant id */
+const variantIdCache = new Map<string, { at: number; id: number | null }>();
+const VARIANT_CACHE_MS = 60 * 60 * 1000;
 
 function dollarsToCents(value: string | number | undefined): number {
   if (value == null) return 0;
@@ -357,14 +361,39 @@ export const printfulConnector: FulfillmentConnector = {
       throw new Error("PRINTFUL_API_TOKEN is not set.");
     }
 
-    const variantId = await resolvePrintfulVariantId(
-      input.productId,
-      input.color,
-      input.size
-    );
+    let variantId: number | null;
+    try {
+      variantId = await resolvePrintfulVariantId(
+        input.productId,
+        input.color,
+        input.size
+      );
+    } catch (error) {
+      throw new Error(
+        `Printful variant lookup failed: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`
+      );
+    }
+
     if (!variantId) {
       throw new Error(
         `No Printful variant for ${input.color} / ${input.size}.`
+      );
+    }
+
+    let hostedUrl: string;
+    try {
+      const uploaded = await uploadArtworkUrlToPrintful(
+        input.artworkUrl,
+        `mockup-${input.productId}-front.png`
+      );
+      hostedUrl = uploaded.url;
+    } catch (error) {
+      throw new Error(
+        `Artwork upload to Printful failed: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`
       );
     }
 
@@ -380,30 +409,40 @@ export const printfulConnector: FulfillmentConnector = {
     const left = Math.round(input.placement.x * input.areaWidthPx);
     const top = Math.round(input.placement.y * input.areaHeightPx);
 
-    const created = await printfulFetch<PrintfulMockupTask>(
-      `/mockup-generator/create-task/${input.productId}`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          variant_ids: [variantId],
-          format: "jpg",
-          files: [
-            {
-              placement: input.areaId,
-              image_url: input.artworkUrl,
-              position: {
-                area_width: input.areaWidthPx,
-                area_height: input.areaHeightPx,
-                width,
-                height,
-                top,
-                left,
+    let created: PrintfulMockupTask;
+    try {
+      created = await printfulFetch<PrintfulMockupTask>(
+        `/mockup-generator/create-task/${input.productId}`,
+        {
+          method: "POST",
+          timeoutMs: 30_000,
+          body: JSON.stringify({
+            variant_ids: [variantId],
+            format: "jpg",
+            files: [
+              {
+                placement: input.areaId || "front",
+                image_url: hostedUrl,
+                position: {
+                  area_width: input.areaWidthPx,
+                  area_height: input.areaHeightPx,
+                  width,
+                  height,
+                  top,
+                  left,
+                },
               },
-            },
-          ],
-        }),
-      }
-    );
+            ],
+          }),
+        }
+      );
+    } catch (error) {
+      throw new Error(
+        `Printful create-task failed: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`
+      );
+    }
 
     if (!created.task_key) {
       throw new Error("Printful did not return a mockup task key.");
@@ -551,13 +590,22 @@ export async function resolvePrintfulVariantId(
   color: string,
   size: string
 ): Promise<number | null> {
+  const cacheKey = `${productId}|${color.toLowerCase()}|${size.toLowerCase()}`;
+  const cached = variantIdCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < VARIANT_CACHE_MS) {
+    return cached.id;
+  }
+
   const detail = await printfulFetch<PrintfulProductDetail>(
-    `/products/${productId}`
+    `/products/${productId}`,
+    { timeoutMs: 20_000 }
   );
   const match = detail.variants.find(
     (v) =>
       v.color.toLowerCase() === color.toLowerCase() &&
       v.size.toLowerCase() === size.toLowerCase()
   );
-  return match?.id ?? null;
+  const id = match?.id ?? null;
+  variantIdCache.set(cacheKey, { at: Date.now(), id });
+  return id;
 }

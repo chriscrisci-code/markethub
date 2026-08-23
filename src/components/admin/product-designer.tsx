@@ -213,27 +213,41 @@ export function ProductDesigner({
     setMockupError(null);
     setMockupUrls([]);
     setMockupStatus("pending");
-    setMockupProgress("Starting Printful task…");
+    setMockupProgress("Resolving variant → uploading art → create-task…");
 
-    const started = await startProviderMockup({
-      providerKey,
-      productId: selectedProduct.id,
-      color: previewColor,
-      size: previewSize,
-      areaId: area.id || "front",
-      artworkUrl,
-      areaWidthPx: area.widthPx,
-      areaHeightPx: area.heightPx,
-      placement,
-      artworkWidthPx,
-      artworkHeightPx,
-    });
+    let started: Awaited<ReturnType<typeof startProviderMockup>>;
+    try {
+      started = await startProviderMockup({
+        providerKey,
+        productId: selectedProduct.id,
+        color: previewColor,
+        size: previewSize,
+        areaId: area.id || "front",
+        artworkUrl,
+        areaWidthPx: area.widthPx,
+        areaHeightPx: area.heightPx,
+        placement,
+        artworkWidthPx,
+        artworkHeightPx,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not start mockup (unexpected error).";
+      setMockupStatus("failed");
+      setMockupProgress(null);
+      setMockupError(message);
+      toast.error(message);
+      return;
+    }
 
     if (started.error || !started.taskKey) {
       setMockupStatus("failed");
       setMockupProgress(null);
-      setMockupError(started.error ?? "Could not start mockup.");
-      toast.error(started.error ?? "Could not start mockup.");
+      const message = started.error ?? "Could not start mockup.";
+      setMockupError(message);
+      toast.error(message);
       return;
     }
 
