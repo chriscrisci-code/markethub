@@ -49,6 +49,21 @@ export interface NormalizedOrder {
   externalOrderId: string;
   saleAmountCents: number;
   lineItems: Array<{ label: string; quantity: number; unitPriceCents: number }>;
+  recipient?: {
+    name?: string;
+    email?: string;
+    address1?: string;
+    city?: string;
+    stateCode?: string;
+    postalCode?: string;
+    countryCode?: string;
+  };
+  fulfillmentItems?: Array<{
+    variantId: number;
+    quantity: number;
+    name: string;
+    files: Array<{ type: string; url: string }>;
+  }>;
 }
 
 export interface FulfillmentJobResult {

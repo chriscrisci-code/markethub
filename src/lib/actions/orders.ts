@@ -158,7 +158,12 @@ export async function sendOrderToFulfillment(orderId: string) {
   }
 
   // Resolve fulfillment provider from the first line item's item
-  const lineItems = order.order_line_items as Array<{ item_id: string | null }>;
+  const lineItems = order.order_line_items as Array<{
+    item_id: string | null;
+    label: string;
+    quantity: number;
+    unit_price_cents: number;
+  }>;
   const firstItemId = lineItems[0]?.item_id;
   let providerKey = "mock-fulfillment";
 
@@ -178,19 +183,129 @@ export async function sendOrderToFulfillment(orderId: string) {
     return { error: "Fulfillment connector not found." };
   }
 
+  const shipping = (order.shipping ?? {}) as Record<string, string>;
+  const customer = (order.customer ?? {}) as Record<string, string>;
+
+  let fulfillmentItems:
+    | Array<{
+        variantId: number;
+        quantity: number;
+        name: string;
+        files: Array<{ type: string; url: string }>;
+      }>
+    | undefined;
+
+  if (providerKey === "printful" && firstItemId) {
+    const { data: itemRow } = await supabase
+      .from("items")
+      .select(
+        `
+        name,
+        item_designs (*),
+        item_artwork (*),
+        item_variants (*)
+      `
+      )
+      .eq("id", firstItemId)
+      .maybeSingle();
+
+    const design = Array.isArray(itemRow?.item_designs)
+      ? itemRow?.item_designs[0]
+      : itemRow?.item_designs;
+    const artwork = Array.isArray(itemRow?.item_artwork)
+      ? itemRow?.item_artwork[0]
+      : itemRow?.item_artwork;
+    const variants = Array.isArray(itemRow?.item_variants)
+      ? itemRow.item_variants
+      : [];
+
+    const productRef = design?.provider_product_ref as
+      | { id?: string; areaId?: string }
+      | null
+      | undefined;
+    const printableArea = design?.printable_area as
+      | { areaId?: string }
+      | null
+      | undefined;
+
+    if (!productRef?.id || !artwork?.storage_path) {
+      return {
+        error:
+          "Printful fulfillment needs a saved Printful product design and uploaded artwork on the item.",
+      };
+    }
+
+    const { data: signed } = await supabase.storage
+      .from("artwork")
+      .createSignedUrl(artwork.storage_path, 60 * 60 * 24);
+
+    if (!signed?.signedUrl) {
+      return { error: "Could not create a signed URL for artwork." };
+    }
+
+    const { resolvePrintfulVariantId } = await import(
+      "@/lib/connectors/fulfillment/printful"
+    );
+
+    const primaryVariant = variants[0] as
+      | { attributes?: { color?: string; size?: string }; label?: string }
+      | undefined;
+    const color = primaryVariant?.attributes?.color;
+    const size = primaryVariant?.attributes?.size;
+
+    if (!color || !size) {
+      return {
+        error:
+          "Select at least one color and size on the item before fulfilling with Printful.",
+      };
+    }
+
+    const variantId = await resolvePrintfulVariantId(
+      productRef.id,
+      color,
+      size
+    );
+
+    if (!variantId) {
+      return {
+        error: `No Printful variant found for ${color} / ${size}.`,
+      };
+    }
+
+    fulfillmentItems = [
+      {
+        variantId,
+        quantity: lineItems[0]?.quantity ?? 1,
+        name: itemRow?.name ?? lineItems[0]?.label ?? "Item",
+        files: [
+          {
+            type: printableArea?.areaId || productRef.areaId || "front",
+            url: signed.signedUrl,
+          },
+        ],
+      },
+    ];
+  }
+
   try {
     const result = await connector.submitFulfillment({
       externalOrderId: order.external_order_id ?? order.id,
       saleAmountCents: order.sale_amount_cents,
-      lineItems: (order.order_line_items as Array<{
-        label: string;
-        quantity: number;
-        unit_price_cents: number;
-      }>).map((li) => ({
+      lineItems: lineItems.map((li) => ({
         label: li.label,
         quantity: li.quantity,
         unitPriceCents: li.unit_price_cents,
       })),
+      recipient: {
+        name: customer.name,
+        email: customer.email,
+        address1: shipping.line1,
+        city: shipping.city,
+        stateCode: shipping.state,
+        postalCode: shipping.postal_code,
+        countryCode: shipping.country || "US",
+      },
+      fulfillmentItems,
     });
 
     const { error: jobError } = await supabase.from("fulfillment_jobs").insert({

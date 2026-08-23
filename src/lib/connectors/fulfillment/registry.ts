@@ -1,8 +1,10 @@
 import { mockFulfillmentConnector } from "./mock";
+import { printfulConnector } from "./printful";
 import type { FulfillmentConnector } from "./types";
 
 const fulfillmentConnectors: Record<string, FulfillmentConnector> = {
   [mockFulfillmentConnector.key]: mockFulfillmentConnector,
+  [printfulConnector.key]: printfulConnector,
 };
 
 export function getFulfillmentConnector(key: string): FulfillmentConnector | null {
