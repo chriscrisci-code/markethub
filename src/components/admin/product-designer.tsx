@@ -18,6 +18,10 @@ import {
 import { DEFAULT_PLACEMENT, estimateMarginCents, fitPlacementToArea } from "@/lib/domain/design";
 import { formatCents } from "@/lib/domain/format";
 import { fetchProviderTemplate } from "@/lib/actions/templates";
+import {
+  pollProviderMockup,
+  startProviderMockup,
+} from "@/lib/actions/mockups";
 import type { ProviderProduct, ProviderTemplate } from "@/lib/connectors/fulfillment/types";
 import type {
   DesignPlacement,
@@ -111,8 +115,19 @@ export function ProductDesigner({
       initialAdjustments.find((a) => a.status === "proposed") ?? null
     );
   const [template, setTemplate] = useState<ProviderTemplate | null>(null);
+  const [mockupStatus, setMockupStatus] = useState<
+    "idle" | "pending" | "completed" | "failed"
+  >("idle");
+  const [mockupUrls, setMockupUrls] = useState<string[]>([]);
+  const [mockupError, setMockupError] = useState<string | null>(null);
 
   const printableArea = selectedProduct?.printableAreas[0] ?? null;
+  const previewColor = selectedColors[0] ?? null;
+  const previewColorHex = previewColor
+    ? selectedProduct?.colorHexByName?.[previewColor] ?? null
+    : null;
+  const previewSize =
+    selectedSizes[0] ?? selectedProduct?.sizes[0] ?? null;
 
   useEffect(() => {
     if (!selectedProduct || !printableArea) {
@@ -136,6 +151,85 @@ export function ProductDesigner({
       cancelled = true;
     };
   }, [providerKey, selectedProduct, printableArea, selectedColors]);
+
+  async function handleGenerateMockup() {
+    if (!selectedProduct || !printableArea || !artworkUrl) {
+      toast.error("Upload artwork and select a product first.");
+      return;
+    }
+    if (!previewColor || !previewSize) {
+      toast.error("Select at least one color and size for the mockup.");
+      return;
+    }
+    if (artworkSize.width <= 0 || artworkSize.height <= 0) {
+      toast.error("Wait for artwork to finish loading, then try again.");
+      return;
+    }
+
+    setMockupError(null);
+    setMockupUrls([]);
+    setMockupStatus("pending");
+
+    const started = await startProviderMockup({
+      providerKey,
+      productId: selectedProduct.id,
+      color: previewColor,
+      size: previewSize,
+      areaId: printableArea.id,
+      artworkUrl,
+      areaWidthPx: printableArea.widthPx,
+      areaHeightPx: printableArea.heightPx,
+      placement,
+      artworkWidthPx: artworkSize.width,
+      artworkHeightPx: artworkSize.height,
+    });
+
+    if (started.error || !started.taskKey) {
+      setMockupStatus("failed");
+      setMockupError(started.error ?? "Could not start mockup.");
+      toast.error(started.error ?? "Could not start mockup.");
+      return;
+    }
+
+    const taskKey = started.taskKey;
+    const deadline = Date.now() + 90_000;
+
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 2500));
+      const polled = await pollProviderMockup(providerKey, taskKey);
+      if (polled.error) {
+        setMockupStatus("failed");
+        setMockupError(polled.error);
+        toast.error(polled.error);
+        return;
+      }
+      const result = polled.result;
+      if (!result) continue;
+
+      if (result.status === "failed") {
+        setMockupStatus("failed");
+        setMockupError(result.error ?? "Mockup generation failed.");
+        toast.error(result.error ?? "Mockup generation failed.");
+        return;
+      }
+
+      if (result.status === "completed") {
+        const urls = result.mockups.map((m) => m.mockupUrl);
+        setMockupUrls(urls);
+        setMockupStatus("completed");
+        if (urls.length === 0) {
+          setMockupError("Task completed but no mockup images were returned.");
+        } else {
+          toast.success("Mockup ready.");
+        }
+        return;
+      }
+    }
+
+    setMockupStatus("failed");
+    setMockupError("Timed out waiting for Printful mockup. Try again.");
+    toast.error("Timed out waiting for mockup.");
+  }
 
   const marginCents = useMemo(() => {
     if (!selectedProduct) return null;
@@ -429,22 +523,90 @@ export function ProductDesigner({
           ) : null}
         </div>
 
-        <PlacementCanvas
-          artworkUrl={artworkUrl}
-          areaWidthPx={printableArea.widthPx}
-          areaHeightPx={printableArea.heightPx}
-          areaWidthInches={printableArea.widthInches}
-          areaHeightInches={printableArea.heightInches}
-          placement={placement}
-          template={template}
-          previewPlacement={
-            proposedAdjustment?.status === "proposed"
-              ? (proposedAdjustment.adjustment as DesignPlacement)
-              : null
-          }
-          onChange={setPlacement}
-          onArtworkSize={handleArtworkSize}
-        />
+        <div className="space-y-6">
+          <PlacementCanvas
+            artworkUrl={artworkUrl}
+            areaWidthPx={printableArea.widthPx}
+            areaHeightPx={printableArea.heightPx}
+            areaWidthInches={printableArea.widthInches}
+            areaHeightInches={printableArea.heightInches}
+            placement={placement}
+            template={template}
+            garmentColorHex={previewColorHex}
+            previewPlacement={
+              proposedAdjustment?.status === "proposed"
+                ? (proposedAdjustment.adjustment as DesignPlacement)
+                : null
+            }
+            onChange={setPlacement}
+            onArtworkSize={handleArtworkSize}
+          />
+
+          <div className="space-y-3 rounded-xl border p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold tracking-tight">Mockup</h3>
+                <p className="text-xs text-muted-foreground">
+                  Printful mockup generator preview for{" "}
+                  {previewColor ?? "selected color"} / {previewSize ?? "size"}{" "}
+                  using your current placement.
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                disabled={
+                  isPending ||
+                  mockupStatus === "pending" ||
+                  !artworkUrl ||
+                  providerKey !== "printful"
+                }
+                onClick={() => {
+                  void handleGenerateMockup();
+                }}
+              >
+                {mockupStatus === "pending"
+                  ? "Generating…"
+                  : "Generate mockup"}
+              </Button>
+            </div>
+
+            {providerKey !== "printful" ? (
+              <p className="text-xs text-muted-foreground">
+                Mockup generation is available when Printful is the fulfillment
+                provider.
+              </p>
+            ) : null}
+
+            {mockupStatus === "pending" ? (
+              <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                Waiting for Printful mockup…
+              </div>
+            ) : null}
+
+            {mockupError ? (
+              <p className="text-sm text-destructive">{mockupError}</p>
+            ) : null}
+
+            {mockupUrls.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {mockupUrls.map((url) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={url}
+                    src={url}
+                    alt="Product mockup"
+                    className="w-full rounded-lg border bg-muted/20 object-contain"
+                  />
+                ))}
+              </div>
+            ) : mockupStatus === "idle" && providerKey === "printful" ? (
+              <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                Generate a mockup to see the real garment render here.
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       {validation.status === "invalid" ? (

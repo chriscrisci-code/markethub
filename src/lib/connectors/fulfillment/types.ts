@@ -98,6 +98,17 @@ export interface ProviderTemplate {
   placementId: string;
 }
 
+export interface ProviderMockupResult {
+  taskKey: string;
+  status: "pending" | "completed" | "failed" | string;
+  mockups: Array<{
+    placement?: string;
+    mockupUrl: string;
+    variantIds?: number[];
+  }>;
+  error?: string;
+}
+
 export interface FulfillmentConnector {
   key: string;
   displayName: string;
@@ -107,6 +118,19 @@ export interface FulfillmentConnector {
     productRef: unknown,
     options?: { areaId?: string; color?: string }
   ): Promise<ProviderTemplate | null>;
+  startMockupGeneration?(input: {
+    productId: string;
+    color: string;
+    size: string;
+    areaId: string;
+    artworkUrl: string;
+    areaWidthPx: number;
+    areaHeightPx: number;
+    placement: MasterDesign["placement"];
+    artworkWidthPx: number;
+    artworkHeightPx: number;
+  }): Promise<{ taskKey: string }>;
+  getMockupTask?(taskKey: string): Promise<ProviderMockupResult>;
   validateDesign(
     design: MasterDesign,
     productRef: unknown

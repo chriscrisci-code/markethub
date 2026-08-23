@@ -63,6 +63,7 @@ export function PlacementCanvas({
   placement,
   previewPlacement,
   template,
+  garmentColorHex,
   onChange,
   onArtworkSize,
 }: {
@@ -74,6 +75,8 @@ export function PlacementCanvas({
   placement: DesignPlacement;
   previewPlacement?: DesignPlacement | null;
   template?: ProviderTemplate | null;
+  /** Hex from provider (e.g. Printful color_code); tint applies only on opaque garment pixels. */
+  garmentColorHex?: string | null;
   onChange: (placement: DesignPlacement) => void;
   onArtworkSize?: (width: number, height: number) => void;
 }) {
@@ -217,14 +220,21 @@ export function PlacementCanvas({
 
   return (
     <div className="space-y-2">
+      <div>
+        <h3 className="text-sm font-semibold tracking-tight">Placement</h3>
+        <p className="text-xs text-muted-foreground">
+          Position artwork on the max print area. Rulers start at 0,0 (top-left).
+        </p>
+      </div>
+
       <div className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
         <p className="font-medium">
           Max print area: {areaWidthInches}&quot; × {areaHeightInches}&quot;
         </p>
         <p className="text-xs text-muted-foreground">
-          {areaWidthPx} × {areaHeightPx} px · Rulers start at 0,0 (top-left of
-          print area)
+          {areaWidthPx} × {areaHeightPx} px
           {hasTemplate ? " · Product template from provider" : null}
+          {garmentColorHex ? ` · Preview color ${garmentColorHex}` : null}
         </p>
       </div>
 
@@ -368,7 +378,7 @@ export function PlacementCanvas({
             onPointerLeave={() => setCursor(null)}
           >
             <Stage width={display.stageWidth} height={display.stageHeight}>
-              {/* Template outline; punch print area so it stays transparent */}
+              {/* Template cutout; optional hex uses 'color' blend (keeps folds, shirt only) */}
               <Layer listening={false}>
                 {hasTemplate && templateImage && template ? (
                   <>
@@ -379,6 +389,16 @@ export function PlacementCanvas({
                       width={display.stageWidth}
                       height={display.stageHeight}
                     />
+                    {garmentColorHex ? (
+                      <Rect
+                        x={0}
+                        y={0}
+                        width={display.stageWidth}
+                        height={display.stageHeight}
+                        fill={garmentColorHex}
+                        globalCompositeOperation="color"
+                      />
+                    ) : null}
                     <Rect
                       x={display.printLeft}
                       y={display.printTop}

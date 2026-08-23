@@ -10,6 +10,7 @@ import type {
   ProviderDesignAdjustment,
   ProviderProduct,
   ProviderTemplate,
+  ProviderMockupResult,
   ValidationIssue,
   ValidationResult,
 } from "../types";
@@ -81,6 +82,18 @@ type PrintfulOrder = {
   shipments?: Array<{
     carrier?: string;
     tracking_number?: string | number;
+  }>;
+};
+
+type PrintfulMockupTask = {
+  task_key: string;
+  status: string;
+  error?: string;
+  mockups?: Array<{
+    placement?: string;
+    mockup_url: string;
+    variant_ids?: number[];
+    extra?: Array<{ title?: string; url?: string }>;
   }>;
 };
 
@@ -337,6 +350,89 @@ export const printfulConnector: FulfillmentConnector = {
       console.error("Printful getProductTemplate failed:", error);
       return null;
     }
+  },
+
+  async startMockupGeneration(input) {
+    if (!hasPrintfulToken()) {
+      throw new Error("PRINTFUL_API_TOKEN is not set.");
+    }
+
+    const variantId = await resolvePrintfulVariantId(
+      input.productId,
+      input.color,
+      input.size
+    );
+    if (!variantId) {
+      throw new Error(
+        `No Printful variant for ${input.color} / ${input.size}.`
+      );
+    }
+
+    const aspect =
+      input.artworkWidthPx > 0
+        ? input.artworkHeightPx / input.artworkWidthPx
+        : 1;
+    const width = Math.max(
+      1,
+      Math.round(input.placement.scale * input.areaWidthPx)
+    );
+    const height = Math.max(1, Math.round(width * aspect));
+    const left = Math.round(input.placement.x * input.areaWidthPx);
+    const top = Math.round(input.placement.y * input.areaHeightPx);
+
+    const created = await printfulFetch<PrintfulMockupTask>(
+      `/mockup-generator/create-task/${input.productId}`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          variant_ids: [variantId],
+          format: "jpg",
+          files: [
+            {
+              placement: input.areaId,
+              image_url: input.artworkUrl,
+              position: {
+                area_width: input.areaWidthPx,
+                area_height: input.areaHeightPx,
+                width,
+                height,
+                top,
+                left,
+              },
+            },
+          ],
+        }),
+      }
+    );
+
+    if (!created.task_key) {
+      throw new Error("Printful did not return a mockup task key.");
+    }
+
+    return { taskKey: created.task_key };
+  },
+
+  async getMockupTask(taskKey: string): Promise<ProviderMockupResult> {
+    const task = await printfulFetch<PrintfulMockupTask>(
+      `/mockup-generator/task?task_key=${encodeURIComponent(taskKey)}`
+    );
+
+    return {
+      taskKey: task.task_key,
+      status: task.status,
+      error: task.error,
+      mockups: (task.mockups ?? []).flatMap((m) => {
+        const urls = [
+          m.mockup_url,
+          ...(m.extra ?? []).map((e) => e.url).filter(Boolean),
+        ].filter((u): u is string => Boolean(u));
+        return urls.map((mockupUrl) => ({
+          placement: m.placement,
+          mockupUrl,
+          variantIds: m.variant_ids,
+        }));
+      }),
+    };
   },
 
   async validateDesign(
