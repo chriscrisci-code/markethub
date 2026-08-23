@@ -9,6 +9,7 @@ import type {
   PrintableArea,
   ProviderDesignAdjustment,
   ProviderProduct,
+  ProviderTemplate,
   ValidationIssue,
   ValidationResult,
 } from "../types";
@@ -33,6 +34,24 @@ type PrintfulProductDetail = {
     color: string;
     price: string;
     in_stock: boolean;
+  }>;
+};
+
+type PrintfulTemplatesResponse = {
+  templates: Array<{
+    template_id: number;
+    image_url: string;
+    printfile_id: number;
+    template_width: number;
+    template_height: number;
+    print_area_width: number;
+    print_area_height: number;
+    print_area_top: number;
+    print_area_left: number;
+  }>;
+  variant_mapping: Array<{
+    variant_id: number;
+    templates: Array<{ placement: string; template_id: number }>;
   }>;
 };
 
@@ -220,6 +239,89 @@ export const printfulConnector: FulfillmentConnector = {
     const products = await this.getProducts();
     const match = products.find((p) => p.id === productId);
     return match?.printableAreas ?? [];
+  },
+
+  async getProductTemplate(productRef, options): Promise<ProviderTemplate | null> {
+    if (!hasPrintfulToken()) return null;
+
+    const productId =
+      typeof productRef === "object" &&
+      productRef !== null &&
+      "id" in productRef
+        ? String((productRef as { id: string }).id)
+        : String(productRef);
+
+    const areaId = options?.areaId ?? "front";
+    const color = options?.color?.trim().toLowerCase();
+
+    try {
+      const [data, detail] = await Promise.all([
+        printfulFetch<PrintfulTemplatesResponse>(
+          `/mockup-generator/templates/${productId}`
+        ),
+        color
+          ? printfulFetch<PrintfulProductDetail>(`/products/${productId}`).catch(
+              () => null
+            )
+          : Promise.resolve(null),
+      ]);
+
+      let preferredVariantIds: Set<number> | null = null;
+      if (color && detail?.variants?.length) {
+        preferredVariantIds = new Set(
+          detail.variants
+            .filter((v) => v.color?.trim().toLowerCase() === color)
+            .map((v) => v.id)
+        );
+      }
+
+      let templateId: number | undefined;
+
+      if (preferredVariantIds?.size && data.variant_mapping?.length) {
+        const mapped = data.variant_mapping.find(
+          (vm) =>
+            preferredVariantIds!.has(vm.variant_id) &&
+            vm.templates.some((t) => t.placement === areaId)
+        );
+        templateId = mapped?.templates.find((t) => t.placement === areaId)
+          ?.template_id;
+      }
+
+      if (!templateId) {
+        const firstMap = data.variant_mapping?.[0]?.templates?.find(
+          (t) => t.placement === areaId
+        );
+        templateId = firstMap?.template_id;
+      }
+
+      const template =
+        data.templates?.find((t) => t.template_id === templateId) ??
+        data.templates?.find((t) =>
+          data.variant_mapping?.some((vm) =>
+            vm.templates.some(
+              (m) =>
+                m.template_id === t.template_id && m.placement === areaId
+            )
+          )
+        ) ??
+        data.templates?.[0];
+
+      if (!template?.image_url) return null;
+
+      return {
+        imageUrl: template.image_url,
+        templateWidth: template.template_width,
+        templateHeight: template.template_height,
+        printAreaLeft: template.print_area_left,
+        printAreaTop: template.print_area_top,
+        printAreaWidth: template.print_area_width,
+        printAreaHeight: template.print_area_height,
+        placementId: areaId,
+      };
+    } catch (error) {
+      console.error("Printful getProductTemplate failed:", error);
+      return null;
+    }
   },
 
   async validateDesign(

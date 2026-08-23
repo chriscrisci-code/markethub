@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Stage,
   Layer,
@@ -12,12 +12,13 @@ import {
 } from "react-konva";
 import type Konva from "konva";
 import type { DesignPlacement } from "@/lib/types/database";
+import type { ProviderTemplate } from "@/lib/connectors/fulfillment/types";
 import { cn } from "@/lib/utils";
 
 const RULER = 28;
-const MAX_STAGE_WIDTH = 420;
+const MAX_VIEW_WIDTH = 460;
 
-function useHtmlImage(url: string | null) {
+function useHtmlImage(url: string | null, { cors = true }: { cors?: boolean } = {}) {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
 
   useEffect(() => {
@@ -27,11 +28,14 @@ function useHtmlImage(url: string | null) {
     }
 
     const img = new window.Image();
-    img.crossOrigin = "anonymous";
+    // Provider template CDNs often omit CORS headers; skip for display-only overlays.
+    if (cors) {
+      img.crossOrigin = "anonymous";
+    }
     img.onload = () => setImage(img);
     img.onerror = () => setImage(null);
     img.src = url;
-  }, [url]);
+  }, [url, cors]);
 
   return image;
 }
@@ -41,15 +45,10 @@ function formatInches(value: number): string {
   return `${rounded}"`;
 }
 
-function buildTickValues(
-  lengthInches: number,
-  originInches: number,
-  majorStep = 1
-): number[] {
-  const start = Math.floor(-originInches) - 1;
-  const end = Math.ceil(lengthInches - originInches) + 1;
+function buildTickValues(lengthInches: number, majorStep = 1): number[] {
+  const end = Math.ceil(lengthInches);
   const ticks: number[] = [];
-  for (let i = start; i <= end; i += majorStep) {
+  for (let i = 0; i <= end; i += majorStep) {
     ticks.push(i);
   }
   return ticks;
@@ -63,6 +62,7 @@ export function PlacementCanvas({
   areaHeightInches,
   placement,
   previewPlacement,
+  template,
   onChange,
   onArtworkSize,
 }: {
@@ -73,46 +73,75 @@ export function PlacementCanvas({
   areaHeightInches: number;
   placement: DesignPlacement;
   previewPlacement?: DesignPlacement | null;
+  template?: ProviderTemplate | null;
   onChange: (placement: DesignPlacement) => void;
   onArtworkSize?: (width: number, height: number) => void;
 }) {
   const activePlacement = previewPlacement ?? placement;
-  const image = useHtmlImage(artworkUrl);
+  const artwork = useHtmlImage(artworkUrl);
+  const templateImage = useHtmlImage(template?.imageUrl ?? null, {
+    cors: false,
+  });
   const imageRef = useRef<Konva.Image>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
-  const stageWrapRef = useRef<HTMLDivElement>(null);
-
-  const viewScale = Math.min(MAX_STAGE_WIDTH / areaWidthPx, 1);
-  const stageWidth = areaWidthPx * viewScale;
-  const stageHeight = areaHeightPx * viewScale;
-  const pxPerInchX = stageWidth / areaWidthInches;
-  const pxPerInchY = stageHeight / areaHeightInches;
-
-  // Origin (0,0) in stage pixels — draggable via rulers
-  const [originX, setOriginX] = useState(0);
-  const [originY, setOriginY] = useState(0);
+  const printAreaRef = useRef<HTMLDivElement>(null);
 
   const [measureMode, setMeasureMode] = useState(false);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
-  const [draggingAxis, setDraggingAxis] = useState<"x" | "y" | null>(null);
+
+  // Layout: either print-area-only stage, or full template with print area region
+  const hasTemplate = Boolean(template && templateImage);
+
+  const display = useMemo(() => {
+    if (hasTemplate && template) {
+      const scale = Math.min(MAX_VIEW_WIDTH / template.templateWidth, 1);
+      return {
+        mode: "template" as const,
+        scale,
+        stageWidth: template.templateWidth * scale,
+        stageHeight: template.templateHeight * scale,
+        printLeft: template.printAreaLeft * scale,
+        printTop: template.printAreaTop * scale,
+        printWidth: template.printAreaWidth * scale,
+        printHeight: template.printAreaHeight * scale,
+      };
+    }
+
+    const scale = Math.min(MAX_VIEW_WIDTH / areaWidthPx, 1);
+    const stageWidth = areaWidthPx * scale;
+    const stageHeight = areaHeightPx * scale;
+    return {
+      mode: "area" as const,
+      scale,
+      stageWidth,
+      stageHeight,
+      printLeft: 0,
+      printTop: 0,
+      printWidth: stageWidth,
+      printHeight: stageHeight,
+    };
+  }, [hasTemplate, template, areaWidthPx, areaHeightPx]);
+
+  const pxPerInchX = display.printWidth / areaWidthInches;
+  const pxPerInchY = display.printHeight / areaHeightInches;
 
   const artworkNatural = useMemo(() => {
-    if (!image) return { width: 0, height: 0 };
-    return { width: image.naturalWidth, height: image.naturalHeight };
-  }, [image]);
+    if (!artwork) return { width: 0, height: 0 };
+    return { width: artwork.naturalWidth, height: artwork.naturalHeight };
+  }, [artwork]);
 
   useEffect(() => {
-    if (image && onArtworkSize) {
-      onArtworkSize(image.naturalWidth, image.naturalHeight);
+    if (artwork && onArtworkSize) {
+      onArtworkSize(artwork.naturalWidth, artwork.naturalHeight);
     }
-  }, [image, onArtworkSize]);
+  }, [artwork, onArtworkSize]);
 
   useEffect(() => {
     if (imageRef.current && transformerRef.current && !previewPlacement) {
       transformerRef.current.nodes([imageRef.current]);
       transformerRef.current.getLayer()?.batchDraw();
     }
-  }, [image, previewPlacement, activePlacement]);
+  }, [artwork, previewPlacement, activePlacement, display]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -122,7 +151,6 @@ export function PlacementCanvas({
     }
     function onKeyUp(event: KeyboardEvent) {
       if (event.key === "Shift" || event.key === "Alt") {
-        // Keep measure mode if the other modifier is still held
         if (!event.shiftKey && !event.altKey) {
           setMeasureMode(false);
         }
@@ -142,46 +170,6 @@ export function PlacementCanvas({
     };
   }, []);
 
-  useEffect(() => {
-    if (!draggingAxis) return;
-
-    function onMove(event: PointerEvent) {
-      const wrap = stageWrapRef.current;
-      if (!wrap) return;
-      const rect = wrap.getBoundingClientRect();
-
-      if (draggingAxis === "x") {
-        const x = Math.min(
-          Math.max(event.clientX - rect.left - RULER, 0),
-          stageWidth
-        );
-        setOriginX(x);
-      } else {
-        const y = Math.min(
-          Math.max(event.clientY - rect.top - RULER, 0),
-          stageHeight
-        );
-        setOriginY(y);
-      }
-    }
-
-    function onUp() {
-      setDraggingAxis(null);
-    }
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-  }, [draggingAxis, stageWidth, stageHeight]);
-
-  const resetOrigin = useCallback(() => {
-    setOriginX(0);
-    setOriginY(0);
-  }, []);
-
   if (!artworkUrl) {
     return (
       <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
@@ -190,21 +178,23 @@ export function PlacementCanvas({
     );
   }
 
-  const drawnWidth = activePlacement.scale * stageWidth;
   const aspect =
     artworkNatural.width > 0
       ? artworkNatural.height / artworkNatural.width
       : 1;
+
+  // Artwork position is always relative to the print area (0,0 = top-left of print area)
+  const drawnWidth = activePlacement.scale * display.printWidth;
   const drawnHeight = drawnWidth * aspect;
-  const x = activePlacement.x * stageWidth;
-  const y = activePlacement.y * stageHeight;
+  const artX = display.printLeft + activePlacement.x * display.printWidth;
+  const artY = display.printTop + activePlacement.y * display.printHeight;
 
   function syncFromNode(node: Konva.Image) {
     const width = node.width() * node.scaleX();
     const next: DesignPlacement = {
-      x: node.x() / stageWidth,
-      y: node.y() / stageHeight,
-      scale: width / stageWidth,
+      x: (node.x() - display.printLeft) / display.printWidth,
+      y: (node.y() - display.printTop) / display.printHeight,
+      scale: width / display.printWidth,
       rotation: node.rotation(),
     };
     node.scaleX(1);
@@ -214,65 +204,53 @@ export function PlacementCanvas({
     onChange(next);
   }
 
-  const originInchesX = originX / pxPerInchX;
-  const originInchesY = originY / pxPerInchY;
-  const hTicks = buildTickValues(areaWidthInches, originInchesX);
-  const vTicks = buildTickValues(areaHeightInches, originInchesY);
+  const hTicks = buildTickValues(areaWidthInches);
+  const vTicks = buildTickValues(areaHeightInches);
 
-  const cursorInches =
+  const cursorInPrint =
     cursor && measureMode
       ? {
-          x: (cursor.x - originX) / pxPerInchX,
-          y: (cursor.y - originY) / pxPerInchY,
+          x: (cursor.x - display.printLeft) / pxPerInchX,
+          y: (cursor.y - display.printTop) / pxPerInchY,
         }
       : null;
 
   return (
     <div className="space-y-2">
+      <div className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
+        <p className="font-medium">
+          Max print area: {areaWidthInches}&quot; × {areaHeightInches}&quot;
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {areaWidthPx} × {areaHeightPx} px · Rulers start at 0,0 (top-left of
+          print area)
+          {hasTemplate ? " · Product template from provider" : null}
+        </p>
+      </div>
+
       <div
-        ref={stageWrapRef}
         className="inline-block overflow-hidden rounded-xl border bg-muted/20 select-none"
-        style={{ width: stageWidth + RULER }}
+        style={{ width: display.stageWidth + RULER }}
       >
-        {/* Ruler chrome */}
         <div
           className="grid"
           style={{
-            gridTemplateColumns: `${RULER}px ${stageWidth}px`,
-            gridTemplateRows: `${RULER}px ${stageHeight}px`,
+            gridTemplateColumns: `${RULER}px ${display.stageWidth}px`,
+            gridTemplateRows: `${RULER}px ${display.stageHeight}px`,
           }}
         >
-          {/* Corner */}
-          <button
-            type="button"
-            title="Reset origin to top-left"
-            onClick={resetOrigin}
-            className="flex items-center justify-center border-b border-r bg-muted text-[10px] font-medium text-muted-foreground hover:bg-muted/80"
-          >
+          <div className="flex items-center justify-center border-b border-r bg-muted text-[10px] font-medium text-muted-foreground">
             0,0
-          </button>
+          </div>
 
-          {/* Top ruler */}
-          <div
-            className={cn(
-              "relative border-b bg-muted/60",
-              draggingAxis === "x" ? "cursor-ew-resize" : "cursor-ew-resize"
-            )}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              setDraggingAxis("x");
-              const rect = event.currentTarget.getBoundingClientRect();
-              const xPos = Math.min(
-                Math.max(event.clientX - rect.left, 0),
-                stageWidth
-              );
-              setOriginX(xPos);
-            }}
-          >
-            <svg width={stageWidth} height={RULER} className="block">
+          {/* Top ruler — aligned to print area */}
+          <div className="relative border-b bg-muted/60">
+            <svg width={display.stageWidth} height={RULER} className="block">
               {hTicks.map((tick) => {
-                const sx = originX + tick * pxPerInchX;
-                if (sx < -1 || sx > stageWidth + 1) return null;
+                const sx = display.printLeft + tick * pxPerInchX;
+                if (sx < display.printLeft - 1 || sx > display.printLeft + display.printWidth + 1) {
+                  return null;
+                }
                 const isZero = tick === 0;
                 return (
                   <g key={`h-${tick}`}>
@@ -296,55 +274,35 @@ export function PlacementCanvas({
                   </g>
                 );
               })}
-              {/* minor 0.25" ticks */}
-              {Array.from({ length: Math.ceil(areaWidthInches * 4) + 8 }).map(
-                (_, i) => {
-                  const value = i * 0.25 - Math.ceil(originInchesX) - 1;
-                  if (Number.isInteger(value)) return null;
-                  const sx = originX + value * pxPerInchX;
-                  if (sx < 0 || sx > stageWidth) return null;
-                  return (
-                    <line
-                      key={`hm-${i}`}
-                      x1={sx}
-                      y1={18}
-                      x2={sx}
-                      y2={RULER}
-                      stroke="#a1a1aa"
-                      strokeWidth={1}
-                    />
-                  );
-                }
-              )}
+              {Array.from({
+                length: Math.ceil(areaWidthInches * 4) + 1,
+              }).map((_, i) => {
+                const value = i * 0.25;
+                if (Number.isInteger(value) || value > areaWidthInches) return null;
+                const sx = display.printLeft + value * pxPerInchX;
+                return (
+                  <line
+                    key={`hm-${i}`}
+                    x1={sx}
+                    y1={18}
+                    x2={sx}
+                    y2={RULER}
+                    stroke="#a1a1aa"
+                    strokeWidth={1}
+                  />
+                );
+              })}
             </svg>
-            {/* Draggable origin handle on top ruler */}
-            <div
-              className="absolute top-0 z-10 -translate-x-1/2"
-              style={{ left: originX }}
-              title="Drag to move horizontal zero"
-            >
-              <div className="h-full w-3 cursor-ew-resize border-x-2 border-foreground/70 bg-foreground/10" style={{ height: RULER }} />
-            </div>
           </div>
 
-          {/* Left ruler */}
-          <div
-            className="relative border-r bg-muted/60 cursor-ns-resize"
-            onPointerDown={(event) => {
-              event.preventDefault();
-              setDraggingAxis("y");
-              const rect = event.currentTarget.getBoundingClientRect();
-              const yPos = Math.min(
-                Math.max(event.clientY - rect.top, 0),
-                stageHeight
-              );
-              setOriginY(yPos);
-            }}
-          >
-            <svg width={RULER} height={stageHeight} className="block">
+          {/* Left ruler — aligned to print area */}
+          <div className="relative border-r bg-muted/60">
+            <svg width={RULER} height={display.stageHeight} className="block">
               {vTicks.map((tick) => {
-                const sy = originY + tick * pxPerInchY;
-                if (sy < -1 || sy > stageHeight + 1) return null;
+                const sy = display.printTop + tick * pxPerInchY;
+                if (sy < display.printTop - 1 || sy > display.printTop + display.printHeight + 1) {
+                  return null;
+                }
                 const isZero = tick === 0;
                 return (
                   <g key={`v-${tick}`}>
@@ -369,37 +327,29 @@ export function PlacementCanvas({
                   </g>
                 );
               })}
-              {Array.from({ length: Math.ceil(areaHeightInches * 4) + 8 }).map(
-                (_, i) => {
-                  const value = i * 0.25 - Math.ceil(originInchesY) - 1;
-                  if (Number.isInteger(value)) return null;
-                  const sy = originY + value * pxPerInchY;
-                  if (sy < 0 || sy > stageHeight) return null;
-                  return (
-                    <line
-                      key={`vm-${i}`}
-                      x1={18}
-                      y1={sy}
-                      x2={RULER}
-                      y2={sy}
-                      stroke="#a1a1aa"
-                      strokeWidth={1}
-                    />
-                  );
-                }
-              )}
+              {Array.from({
+                length: Math.ceil(areaHeightInches * 4) + 1,
+              }).map((_, i) => {
+                const value = i * 0.25;
+                if (Number.isInteger(value) || value > areaHeightInches) return null;
+                const sy = display.printTop + value * pxPerInchY;
+                return (
+                  <line
+                    key={`vm-${i}`}
+                    x1={18}
+                    y1={sy}
+                    x2={RULER}
+                    y2={sy}
+                    stroke="#a1a1aa"
+                    strokeWidth={1}
+                  />
+                );
+              })}
             </svg>
-            <div
-              className="absolute left-0 z-10 -translate-y-1/2"
-              style={{ top: originY }}
-              title="Drag to move vertical zero"
-            >
-              <div className="h-3 w-full cursor-ns-resize border-y-2 border-foreground/70 bg-foreground/10" style={{ width: RULER }} />
-            </div>
           </div>
 
-          {/* Stage */}
           <div
+            ref={printAreaRef}
             className={cn("relative", measureMode && "cursor-crosshair")}
             onPointerMove={(event) => {
               const rect = event.currentTarget.getBoundingClientRect();
@@ -410,44 +360,131 @@ export function PlacementCanvas({
             }}
             onPointerLeave={() => setCursor(null)}
           >
-            <Stage width={stageWidth} height={stageHeight}>
+            <Stage width={display.stageWidth} height={display.stageHeight}>
               <Layer>
+                {hasTemplate && templateImage && template ? (
+                  <KonvaImage
+                    image={templateImage}
+                    x={0}
+                    y={0}
+                    width={display.stageWidth}
+                    height={display.stageHeight}
+                    listening={false}
+                  />
+                ) : (
+                  <Rect
+                    x={0}
+                    y={0}
+                    width={display.stageWidth}
+                    height={display.stageHeight}
+                    fill="#f4f4f5"
+                    listening={false}
+                  />
+                )}
+
+                {/* Dim outside print area when template is shown */}
+                {hasTemplate ? (
+                  <>
+                    <Rect
+                      x={0}
+                      y={0}
+                      width={display.stageWidth}
+                      height={display.printTop}
+                      fill="rgba(0,0,0,0.28)"
+                      listening={false}
+                    />
+                    <Rect
+                      x={0}
+                      y={display.printTop + display.printHeight}
+                      width={display.stageWidth}
+                      height={
+                        display.stageHeight -
+                        display.printTop -
+                        display.printHeight
+                      }
+                      fill="rgba(0,0,0,0.28)"
+                      listening={false}
+                    />
+                    <Rect
+                      x={0}
+                      y={display.printTop}
+                      width={display.printLeft}
+                      height={display.printHeight}
+                      fill="rgba(0,0,0,0.28)"
+                      listening={false}
+                    />
+                    <Rect
+                      x={display.printLeft + display.printWidth}
+                      y={display.printTop}
+                      width={
+                        display.stageWidth -
+                        display.printLeft -
+                        display.printWidth
+                      }
+                      height={display.printHeight}
+                      fill="rgba(0,0,0,0.28)"
+                      listening={false}
+                    />
+                  </>
+                ) : null}
+
+                {/* Max print area outline */}
                 <Rect
-                  x={0}
-                  y={0}
-                  width={stageWidth}
-                  height={stageHeight}
-                  fill="#f4f4f5"
-                  stroke="#a1a1aa"
+                  x={display.printLeft}
+                  y={display.printTop}
+                  width={display.printWidth}
+                  height={display.printHeight}
+                  stroke="#2563eb"
+                  strokeWidth={2}
                   dash={[6, 4]}
+                  fill={hasTemplate ? "transparent" : "#f4f4f5"}
+                  listening={false}
                 />
 
-                {/* Origin zero guides */}
+                {/* Origin marker at print-area top-left */}
                 <Line
-                  points={[originX, 0, originX, stageHeight]}
-                  stroke="#27272a"
-                  strokeWidth={1}
-                  opacity={0.35}
-                  dash={[4, 4]}
+                  points={[
+                    display.printLeft,
+                    display.printTop,
+                    display.printLeft + 12,
+                    display.printTop,
+                  ]}
+                  stroke="#18181b"
+                  strokeWidth={1.5}
+                  listening={false}
                 />
                 <Line
-                  points={[0, originY, stageWidth, originY]}
-                  stroke="#27272a"
-                  strokeWidth={1}
-                  opacity={0.35}
-                  dash={[4, 4]}
+                  points={[
+                    display.printLeft,
+                    display.printTop,
+                    display.printLeft,
+                    display.printTop + 12,
+                  ]}
+                  stroke="#18181b"
+                  strokeWidth={1.5}
+                  listening={false}
                 />
 
-                {image ? (
+                {artwork ? (
                   <KonvaImage
                     ref={imageRef}
-                    image={image}
-                    x={x}
-                    y={y}
+                    image={artwork}
+                    x={artX}
+                    y={artY}
                     width={drawnWidth}
                     height={drawnHeight}
                     rotation={activePlacement.rotation}
                     draggable={!previewPlacement && !measureMode}
+                    dragBoundFunc={(pos) => ({
+                      x: Math.min(
+                        Math.max(pos.x, display.printLeft - drawnWidth * 0.5),
+                        display.printLeft + display.printWidth
+                      ),
+                      y: Math.min(
+                        Math.max(pos.y, display.printTop - drawnHeight * 0.5),
+                        display.printTop + display.printHeight
+                      ),
+                    })}
                     onDragEnd={(event) => {
                       syncFromNode(event.target as Konva.Image);
                     }}
@@ -476,25 +513,37 @@ export function PlacementCanvas({
                   />
                 ) : null}
 
-                {/* Measure crosshairs */}
                 {measureMode && cursor ? (
                   <>
                     <Line
-                      points={[cursor.x, 0, cursor.x, stageHeight]}
+                      points={[
+                        cursor.x,
+                        display.printTop,
+                        cursor.x,
+                        display.printTop + display.printHeight,
+                      ]}
                       stroke="#dc2626"
                       strokeWidth={1}
                       listening={false}
                     />
                     <Line
-                      points={[0, cursor.y, stageWidth, cursor.y]}
+                      points={[
+                        display.printLeft,
+                        cursor.y,
+                        display.printLeft + display.printWidth,
+                        cursor.y,
+                      ]}
                       stroke="#dc2626"
                       strokeWidth={1}
                       listening={false}
                     />
                     <Text
-                      x={Math.min(cursor.x + 8, stageWidth - 90)}
-                      y={Math.max(cursor.y - 28, 4)}
-                      text={`${formatInches(cursorInches?.x ?? 0)} , ${formatInches(cursorInches?.y ?? 0)}`}
+                      x={Math.min(
+                        cursor.x + 8,
+                        display.printLeft + display.printWidth - 90
+                      )}
+                      y={Math.max(cursor.y - 28, display.printTop + 4)}
+                      text={`${formatInches(cursorInPrint?.x ?? 0)} , ${formatInches(cursorInPrint?.y ?? 0)}`}
                       fontSize={11}
                       fill="#dc2626"
                       fontStyle="bold"
@@ -508,20 +557,15 @@ export function PlacementCanvas({
         </div>
       </div>
 
-      <div className="space-y-1 text-xs text-muted-foreground">
-        <p>
-          Print area {areaWidthInches}&quot; × {areaHeightInches}&quot;. Drag
-          top/side rulers to move 0,0. Corner resets origin.
-        </p>
-        <p>
-          Hold <kbd className="rounded border px-1">Shift</kbd> or{" "}
-          <kbd className="rounded border px-1">Alt</kbd> for measuring
-          crosshairs (inches from origin).
-          {previewPlacement
-            ? " Showing proposed provider fix (master design unchanged)."
-            : null}
-        </p>
-      </div>
+      <p className="text-xs text-muted-foreground">
+        Blue dashed box = maximum print area. Hold{" "}
+        <kbd className="rounded border px-1">Shift</kbd> or{" "}
+        <kbd className="rounded border px-1">Alt</kbd> for measuring crosshairs
+        (inches from print-area 0,0).
+        {previewPlacement
+          ? " Showing proposed provider fix (master design unchanged)."
+          : null}
+      </p>
     </div>
   );
 }

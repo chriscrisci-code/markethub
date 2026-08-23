@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,8 @@ import {
 } from "@/lib/actions/design";
 import { DEFAULT_PLACEMENT, estimateMarginCents, fitPlacementToArea } from "@/lib/domain/design";
 import { formatCents } from "@/lib/domain/format";
-import type { ProviderProduct } from "@/lib/connectors/fulfillment/types";
+import { fetchProviderTemplate } from "@/lib/actions/templates";
+import type { ProviderProduct, ProviderTemplate } from "@/lib/connectors/fulfillment/types";
 import type {
   DesignPlacement,
   ItemDesign,
@@ -53,6 +54,7 @@ type ValidationState =
 
 export function ProductDesigner({
   itemId,
+  providerKey,
   salePriceCents,
   artworkUrl,
   products,
@@ -61,6 +63,7 @@ export function ProductDesigner({
   initialAdjustments,
 }: {
   itemId: string;
+  providerKey: string;
   salePriceCents: number;
   artworkUrl: string | null;
   products: ProviderProduct[];
@@ -107,8 +110,32 @@ export function ProductDesigner({
     useState<ProviderDesignAdjustmentRow | null>(
       initialAdjustments.find((a) => a.status === "proposed") ?? null
     );
+  const [template, setTemplate] = useState<ProviderTemplate | null>(null);
 
   const printableArea = selectedProduct?.printableAreas[0] ?? null;
+
+  useEffect(() => {
+    if (!selectedProduct || !printableArea) {
+      setTemplate(null);
+      return;
+    }
+
+    let cancelled = false;
+    void fetchProviderTemplate(
+      providerKey,
+      selectedProduct.id,
+      printableArea.id,
+      selectedColors[0]
+    ).then((result) => {
+      if (!cancelled) {
+        setTemplate(result.template);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [providerKey, selectedProduct, printableArea, selectedColors]);
 
   const marginCents = useMemo(() => {
     if (!selectedProduct) return null;
@@ -319,8 +346,9 @@ export function ProductDesigner({
               ))}
             </select>
             <p className="text-xs text-muted-foreground">
-              Print area: {printableArea.label} · {printableArea.widthInches}
-              &quot; × {printableArea.heightInches}&quot;
+              Max print: {printableArea.label} · {printableArea.widthInches}
+              &quot; × {printableArea.heightInches}&quot; (
+              {printableArea.widthPx} × {printableArea.heightPx} px)
             </p>
           </div>
 
@@ -400,6 +428,7 @@ export function ProductDesigner({
           areaWidthInches={printableArea.widthInches}
           areaHeightInches={printableArea.heightInches}
           placement={placement}
+          template={template}
           previewPlacement={
             proposedAdjustment?.status === "proposed"
               ? (proposedAdjustment.adjustment as DesignPlacement)

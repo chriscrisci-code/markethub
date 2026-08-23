@@ -82,11 +82,26 @@ export interface BillingInfo {
   confirmed: boolean;
 }
 
+export interface ProviderTemplate {
+  imageUrl: string;
+  templateWidth: number;
+  templateHeight: number;
+  printAreaLeft: number;
+  printAreaTop: number;
+  printAreaWidth: number;
+  printAreaHeight: number;
+  placementId: string;
+}
+
 export interface FulfillmentConnector {
   key: string;
   displayName: string;
   getProducts(): Promise<ProviderProduct[]>;
   getPrintableAreas(productRef: unknown): Promise<PrintableArea[]>;
+  getProductTemplate?(
+    productRef: unknown,
+    options?: { areaId?: string; color?: string }
+  ): Promise<ProviderTemplate | null>;
   validateDesign(
     design: MasterDesign,
     productRef: unknown

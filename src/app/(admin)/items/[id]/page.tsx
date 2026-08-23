@@ -110,6 +110,7 @@ export default async function ItemDetailPage({
           ) : null}
           <ProductDesigner
             itemId={item.id}
+            providerKey={providerKey}
             salePriceCents={item.base_price_cents}
             artworkUrl={artworkUrl}
             products={products}
