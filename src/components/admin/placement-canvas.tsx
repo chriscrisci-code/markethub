@@ -286,7 +286,7 @@ export function PlacementCanvas({
                       y={11}
                       fill={isZero ? "#18181b" : "#52525b"}
                       fontSize={9}
-                      fontFamily="ui-sans-serif, system-ui"
+                      fontFamily="Poppins, sans-serif"
                     >
                       {tick}
                     </text>
@@ -338,7 +338,7 @@ export function PlacementCanvas({
                       y={sy - 3}
                       fill={isZero ? "#18181b" : "#52525b"}
                       fontSize={9}
-                      fontFamily="ui-sans-serif, system-ui"
+                      fontFamily="Poppins, sans-serif"
                       transform={`rotate(-90, 10, ${sy - 3})`}
                     >
                       {tick}
@@ -576,6 +576,7 @@ export function PlacementCanvas({
                       y={Math.max(cursor.y - 28, display.printTop + 4)}
                       text={`${formatInches(cursorInPrint?.x ?? 0)} , ${formatInches(cursorInPrint?.y ?? 0)}`}
                       fontSize={11}
+                      fontFamily="Poppins, sans-serif"
                       fill="#dc2626"
                       fontStyle="bold"
                       listening={false}
