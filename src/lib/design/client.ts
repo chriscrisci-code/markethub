@@ -27,3 +27,19 @@ export async function saveItemDesignViaApi(
 
   return { success: true };
 }
+
+/** Best-effort artwork pixel size update; failures are ignored. */
+export function updateArtworkDimensionsViaApi(
+  itemId: string,
+  widthPx: number,
+  heightPx: number,
+  side: "front" | "back" = "front"
+): void {
+  void fetch(`/api/items/${itemId}/artwork-dimensions`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ side, widthPx, heightPx }),
+  }).catch(() => {
+    // Non-blocking; placement still works with local dimensions.
+  });
+}

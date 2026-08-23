@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, Package, ShoppingBag, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -30,7 +29,7 @@ export function AdminSidebar() {
           const active = pathname === href || pathname.startsWith(`${href}/`);
 
           return (
-            <Link
+            <a
               key={href}
               href={href}
               className={cn(
@@ -42,7 +41,7 @@ export function AdminSidebar() {
             >
               <Icon className="size-4" />
               {label}
-            </Link>
+            </a>
           );
         })}
       </nav>

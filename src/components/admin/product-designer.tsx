@@ -17,10 +17,12 @@ import {
   approveDesignAdjustment,
   proposeDesignAutoFix,
   revertDesignAdjustment,
-  updateArtworkDimensions,
   validateItemDesign,
 } from "@/lib/actions/design";
-import { saveItemDesignViaApi } from "@/lib/design/client";
+import {
+  saveItemDesignViaApi,
+  updateArtworkDimensionsViaApi,
+} from "@/lib/design/client";
 import {
   DEFAULT_PLACEMENT,
   estimateMarginCents,
@@ -28,11 +30,11 @@ import {
 } from "@/lib/domain/design";
 import { formatCents } from "@/lib/domain/format";
 import { getProductSideAreas } from "@/lib/domain/artwork-sides";
-import { fetchProviderTemplate } from "@/lib/actions/templates";
 import {
   pollMockupViaApi,
   startMockupViaApi,
 } from "@/lib/mockups/client";
+import { fetchProviderTemplateViaApi } from "@/lib/templates/client";
 import type {
   MockupPrintFile,
   ProviderProduct,
@@ -180,7 +182,7 @@ export function ProductDesigner({
       (["front", "back"] as const).map(async (side) => {
         const area = sideAreas[side];
         if (!area) return [side, null] as const;
-        const result = await fetchProviderTemplate(
+        const result = await fetchProviderTemplateViaApi(
           providerKey,
           selectedProduct.id,
           area.id,
@@ -342,7 +344,7 @@ export function ProductDesigner({
         ...prev,
         [side]: { width, height },
       }));
-      void updateArtworkDimensions(itemId, width, height, side);
+      updateArtworkDimensionsViaApi(itemId, width, height, side);
     },
     [itemId]
   );
