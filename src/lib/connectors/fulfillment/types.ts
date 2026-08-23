@@ -14,6 +14,8 @@ export interface ProviderProduct {
   baseCostCents: number;
   printableAreas: PrintableArea[];
   colors: string[];
+  /** Hex swatches keyed by color name (e.g. Printful color_code). */
+  colorHexByName?: Record<string, string>;
   sizes: string[];
 }
 
@@ -84,6 +86,9 @@ export interface BillingInfo {
 
 export interface ProviderTemplate {
   imageUrl: string;
+  /** Colored garment photo when Printful provides one for the variant. */
+  backgroundUrl?: string | null;
+  backgroundColor?: string | null;
   templateWidth: number;
   templateHeight: number;
   printAreaLeft: number;

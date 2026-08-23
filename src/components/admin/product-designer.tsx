@@ -357,6 +357,7 @@ export function ProductDesigner({
             <div className="flex flex-wrap gap-2">
               {selectedProduct.colors.map((color) => {
                 const active = selectedColors.includes(color);
+                const hex = selectedProduct.colorHexByName?.[color];
                 return (
                   <button
                     key={color}
@@ -365,12 +366,19 @@ export function ProductDesigner({
                       toggleValue(selectedColors, color, setSelectedColors)
                     }
                     className={cn(
-                      "rounded-full border px-3 py-1 text-sm transition-colors",
+                      "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm transition-colors",
                       active
                         ? "border-foreground bg-foreground text-background"
                         : "border-border hover:bg-muted"
                     )}
                   >
+                    {hex ? (
+                      <span
+                        className="size-3.5 shrink-0 rounded-full border border-black/15"
+                        style={{ backgroundColor: hex }}
+                        aria-hidden
+                      />
+                    ) : null}
                     {color}
                   </button>
                 );
@@ -429,6 +437,11 @@ export function ProductDesigner({
           areaHeightInches={printableArea.heightInches}
           placement={placement}
           template={template}
+          garmentColorHex={
+            selectedColors[0]
+              ? selectedProduct.colorHexByName?.[selectedColors[0]] ?? null
+              : null
+          }
           previewPlacement={
             proposedAdjustment?.status === "proposed"
               ? (proposedAdjustment.adjustment as DesignPlacement)

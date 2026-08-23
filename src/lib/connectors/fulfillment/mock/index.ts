@@ -22,6 +22,11 @@ const mockProducts: ProviderProduct[] = [
       },
     ],
     colors: ["Black", "White", "Navy"],
+    colorHexByName: {
+      Black: "#1a1a1a",
+      White: "#f5f5f5",
+      Navy: "#1e3a5f",
+    },
     sizes: ["S", "M", "L", "XL"],
   },
   {
@@ -40,6 +45,10 @@ const mockProducts: ProviderProduct[] = [
       },
     ],
     colors: ["Black", "Heather Gray"],
+    colorHexByName: {
+      Black: "#1a1a1a",
+      "Heather Gray": "#9ca3af",
+    },
     sizes: ["S", "M", "L", "XL", "2XL"],
   },
 ];

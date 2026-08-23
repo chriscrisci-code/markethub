@@ -63,6 +63,7 @@ export function PlacementCanvas({
   placement,
   previewPlacement,
   template,
+  garmentColorHex,
   onChange,
   onArtworkSize,
 }: {
@@ -74,12 +75,17 @@ export function PlacementCanvas({
   placement: DesignPlacement;
   previewPlacement?: DesignPlacement | null;
   template?: ProviderTemplate | null;
+  /** Printful color_code (or similar) for the primary selected color. */
+  garmentColorHex?: string | null;
   onChange: (placement: DesignPlacement) => void;
   onArtworkSize?: (width: number, height: number) => void;
 }) {
   const activePlacement = previewPlacement ?? placement;
   const artwork = useHtmlImage(artworkUrl);
   const templateImage = useHtmlImage(template?.imageUrl ?? null, {
+    cors: false,
+  });
+  const backgroundImage = useHtmlImage(template?.backgroundUrl ?? null, {
     cors: false,
   });
   const imageRef = useRef<Konva.Image>(null);
@@ -91,6 +97,11 @@ export function PlacementCanvas({
 
   // Layout: either print-area-only stage, or full template with print area region
   const hasTemplate = Boolean(template && templateImage);
+
+  const fillColor =
+    garmentColorHex ||
+    template?.backgroundColor ||
+    null;
 
   const display = useMemo(() => {
     if (hasTemplate && template) {
@@ -229,8 +240,15 @@ export function PlacementCanvas({
       </div>
 
       <div
-        className="inline-block overflow-hidden rounded-xl border bg-muted/20 select-none"
-        style={{ width: display.stageWidth + RULER }}
+        className="inline-block overflow-hidden rounded-xl border select-none"
+        style={{
+          width: display.stageWidth + RULER,
+          backgroundColor: "#e4e4e7",
+          backgroundImage:
+            "linear-gradient(45deg, #d4d4d8 25%, transparent 25%), linear-gradient(-45deg, #d4d4d8 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d4d4d8 75%), linear-gradient(-45deg, transparent 75%, #d4d4d8 75%)",
+          backgroundSize: "16px 16px",
+          backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0",
+        }}
       >
         <div
           className="grid"
@@ -361,28 +379,60 @@ export function PlacementCanvas({
             onPointerLeave={() => setCursor(null)}
           >
             <Stage width={display.stageWidth} height={display.stageHeight}>
-              <Layer>
-                {hasTemplate && templateImage && template ? (
+              {/* Colored garment photo (when Printful provides background_url) */}
+              {backgroundImage ? (
+                <Layer listening={false}>
                   <KonvaImage
-                    image={templateImage}
+                    image={backgroundImage}
                     x={0}
                     y={0}
                     width={display.stageWidth}
                     height={display.stageHeight}
-                    listening={false}
                   />
-                ) : (
-                  <Rect
-                    x={0}
-                    y={0}
-                    width={display.stageWidth}
-                    height={display.stageHeight}
-                    fill="#f4f4f5"
-                    listening={false}
-                  />
-                )}
+                </Layer>
+              ) : null}
 
-                {/* Dim outside print area when template is shown */}
+              {/*
+                Template + optional hex tint. Same layer so multiply works.
+                destination-out clears the print area (transparent checkerboard).
+              */}
+              <Layer listening={false}>
+                {hasTemplate && templateImage && template ? (
+                  <>
+                    {!backgroundImage && fillColor ? (
+                      <Rect
+                        x={0}
+                        y={0}
+                        width={display.stageWidth}
+                        height={display.stageHeight}
+                        fill={fillColor}
+                      />
+                    ) : null}
+                    <KonvaImage
+                      image={templateImage}
+                      x={0}
+                      y={0}
+                      width={display.stageWidth}
+                      height={display.stageHeight}
+                      globalCompositeOperation={
+                        !backgroundImage && fillColor
+                          ? "multiply"
+                          : "source-over"
+                      }
+                    />
+                    <Rect
+                      x={display.printLeft}
+                      y={display.printTop}
+                      width={display.printWidth}
+                      height={display.printHeight}
+                      fill="#000000"
+                      globalCompositeOperation="destination-out"
+                    />
+                  </>
+                ) : null}
+              </Layer>
+
+              <Layer>
                 {hasTemplate ? (
                   <>
                     <Rect
@@ -390,7 +440,7 @@ export function PlacementCanvas({
                       y={0}
                       width={display.stageWidth}
                       height={display.printTop}
-                      fill="rgba(0,0,0,0.28)"
+                      fill="rgba(0,0,0,0.22)"
                       listening={false}
                     />
                     <Rect
@@ -402,7 +452,7 @@ export function PlacementCanvas({
                         display.printTop -
                         display.printHeight
                       }
-                      fill="rgba(0,0,0,0.28)"
+                      fill="rgba(0,0,0,0.22)"
                       listening={false}
                     />
                     <Rect
@@ -410,7 +460,7 @@ export function PlacementCanvas({
                       y={display.printTop}
                       width={display.printLeft}
                       height={display.printHeight}
-                      fill="rgba(0,0,0,0.28)"
+                      fill="rgba(0,0,0,0.22)"
                       listening={false}
                     />
                     <Rect
@@ -422,13 +472,12 @@ export function PlacementCanvas({
                         display.printWidth
                       }
                       height={display.printHeight}
-                      fill="rgba(0,0,0,0.28)"
+                      fill="rgba(0,0,0,0.22)"
                       listening={false}
                     />
                   </>
                 ) : null}
 
-                {/* Max print area outline */}
                 <Rect
                   x={display.printLeft}
                   y={display.printTop}
@@ -437,11 +486,10 @@ export function PlacementCanvas({
                   stroke="#2563eb"
                   strokeWidth={2}
                   dash={[6, 4]}
-                  fill={hasTemplate ? "transparent" : "#f4f4f5"}
+                  fillEnabled={false}
                   listening={false}
                 />
 
-                {/* Origin marker at print-area top-left */}
                 <Line
                   points={[
                     display.printLeft,

@@ -32,6 +32,8 @@ type PrintfulProductDetail = {
     name: string;
     size: string;
     color: string;
+    color_code?: string;
+    color_code2?: string | null;
     price: string;
     in_stock: boolean;
   }>;
@@ -41,6 +43,8 @@ type PrintfulTemplatesResponse = {
   templates: Array<{
     template_id: number;
     image_url: string;
+    background_url?: string | null;
+    background_color?: string | null;
     printfile_id: number;
     template_width: number;
     template_height: number;
@@ -131,6 +135,13 @@ async function loadProduct(productId: number): Promise<ProviderProduct | null> {
     const colors = Array.from(
       new Set(variants.map((v) => v.color).filter(Boolean))
     );
+    const colorHexByName: Record<string, string> = {};
+    for (const v of variants) {
+      if (!v.color || !v.color_code) continue;
+      if (!colorHexByName[v.color]) {
+        colorHexByName[v.color] = v.color_code;
+      }
+    }
     const sizes = Array.from(
       new Set(variants.map((v) => v.size).filter(Boolean))
     );
@@ -179,6 +190,8 @@ async function loadProduct(productId: number): Promise<ProviderProduct | null> {
       baseCostCents,
       printableAreas,
       colors,
+      colorHexByName:
+        Object.keys(colorHexByName).length > 0 ? colorHexByName : undefined,
       sizes,
     };
   } catch {
@@ -310,6 +323,8 @@ export const printfulConnector: FulfillmentConnector = {
 
       return {
         imageUrl: template.image_url,
+        backgroundUrl: template.background_url ?? null,
+        backgroundColor: template.background_color ?? null,
         templateWidth: template.template_width,
         templateHeight: template.template_height,
         printAreaLeft: template.print_area_left,
