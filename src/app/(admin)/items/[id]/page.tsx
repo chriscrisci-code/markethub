@@ -15,6 +15,9 @@ import {
 } from "@/lib/data/queries";
 import { artworkBySide } from "@/lib/domain/artwork-sides";
 
+/** Allow longer server actions (e.g. Printful mockup start) on this page. */
+export const maxDuration = 60;
+
 export default async function ItemDetailPage({
   params,
 }: {

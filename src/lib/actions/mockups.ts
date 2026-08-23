@@ -4,9 +4,6 @@ import { getFulfillmentConnector } from "@/lib/connectors/fulfillment/registry";
 import type { ProviderMockupResult } from "@/lib/connectors/fulfillment/types";
 import type { DesignPlacement } from "@/lib/types/database";
 
-/** Allow download → Printful upload → create-task on Vercel. */
-export const maxDuration = 60;
-
 /** Same shape as the first working mockup: one print file (usually front). */
 export async function startProviderMockup(input: {
   providerKey: string;
