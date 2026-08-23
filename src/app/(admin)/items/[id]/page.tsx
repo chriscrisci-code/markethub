@@ -33,7 +33,26 @@ export default async function ItemDetailPage({
 
   const providerKey = item.fulfillment_provider_key ?? "mock-fulfillment";
   const connector = getFulfillmentConnector(providerKey);
-  const products = connector ? await connector.getProducts() : [];
+
+  let products: Awaited<ReturnType<NonNullable<typeof connector>["getProducts"]>> =
+    [];
+  let catalogError: string | null = null;
+
+  if (connector) {
+    try {
+      products = await connector.getProducts();
+      if (providerKey === "printful" && products.length === 0) {
+        catalogError =
+          "Could not load Printful products. Add PRINTFUL_API_TOKEN in Vercel (or .env.local), then redeploy/restart.";
+      }
+    } catch (error) {
+      console.error("Fulfillment catalog error:", error);
+      catalogError =
+        error instanceof Error
+          ? error.message
+          : "Failed to load fulfillment products.";
+    }
+  }
 
   const [fulfillmentProviders, marketplaces, artworkUrl] = await Promise.all([
     getFulfillmentProviders(),
@@ -84,6 +103,11 @@ export default async function ItemDetailPage({
           <CardTitle>Product Designer</CardTitle>
         </CardHeader>
         <CardContent>
+          {catalogError ? (
+            <p className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {catalogError}
+            </p>
+          ) : null}
           <ProductDesigner
             itemId={item.id}
             salePriceCents={item.base_price_cents}

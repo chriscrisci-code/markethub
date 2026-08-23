@@ -1,4 +1,4 @@
-import { printfulFetch } from "./client";
+import { hasPrintfulToken, printfulFetch } from "./client";
 import type {
   BillingInfo,
   FulfillmentConnector,
@@ -172,33 +172,41 @@ export const printfulConnector: FulfillmentConnector = {
   displayName: "Printful",
 
   async getProducts() {
+    if (!hasPrintfulToken()) {
+      return [];
+    }
+
     if (productsCache && Date.now() - productsCache.at < CACHE_MS) {
       return productsCache.products;
     }
 
-    const loaded = await Promise.all(
-      FEATURED_PRODUCT_IDS.map((id) => loadProduct(id))
-    );
-    const products = loaded.filter((p): p is ProviderProduct => p != null);
+    try {
+      const loaded = await Promise.all(
+        FEATURED_PRODUCT_IDS.map((id) => loadProduct(id))
+      );
+      const products = loaded.filter((p): p is ProviderProduct => p != null);
 
-    if (products.length === 0) {
-      // Fallback: try listing catalog and take a few apparel items
-      const catalog = await printfulFetch<PrintfulCatalogProduct[]>("/products");
-      const candidates = (catalog ?? [])
-        .filter((p) => !p.is_discontinued)
-        .filter((p) =>
-          ["T-SHIRT", "HOODIE", "SWEATSHIRT", "POSTER"].includes(p.type)
-        )
-        .slice(0, 6);
+      if (products.length === 0) {
+        const catalog = await printfulFetch<PrintfulCatalogProduct[]>("/products");
+        const candidates = (catalog ?? [])
+          .filter((p) => !p.is_discontinued)
+          .filter((p) =>
+            ["T-SHIRT", "HOODIE", "SWEATSHIRT", "POSTER"].includes(p.type)
+          )
+          .slice(0, 6);
 
-      const more = await Promise.all(candidates.map((p) => loadProduct(p.id)));
-      const fallback = more.filter((p): p is ProviderProduct => p != null);
-      productsCache = { at: Date.now(), products: fallback };
-      return fallback;
+        const more = await Promise.all(candidates.map((p) => loadProduct(p.id)));
+        const fallback = more.filter((p): p is ProviderProduct => p != null);
+        productsCache = { at: Date.now(), products: fallback };
+        return fallback;
+      }
+
+      productsCache = { at: Date.now(), products };
+      return products;
+    } catch (error) {
+      console.error("Printful getProducts failed:", error);
+      return [];
     }
-
-    productsCache = { at: Date.now(), products };
-    return products;
   },
 
   async getPrintableAreas(productRef) {

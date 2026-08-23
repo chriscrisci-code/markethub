@@ -11,8 +11,12 @@ export class PrintfulApiError extends Error {
   }
 }
 
+export function hasPrintfulToken(): boolean {
+  return Boolean(process.env.PRINTFUL_API_TOKEN?.trim());
+}
+
 function getToken(): string {
-  const token = process.env.PRINTFUL_API_TOKEN;
+  const token = process.env.PRINTFUL_API_TOKEN?.trim();
   if (!token) {
     throw new Error(
       "PRINTFUL_API_TOKEN is not set. Add it to .env.local and Vercel env vars."
