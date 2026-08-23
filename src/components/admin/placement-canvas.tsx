@@ -64,6 +64,7 @@ export function PlacementCanvas({
   previewPlacement,
   template,
   garmentColorHex,
+  title = "Placement",
   onChange,
   onArtworkSize,
 }: {
@@ -77,6 +78,7 @@ export function PlacementCanvas({
   template?: ProviderTemplate | null;
   /** Hex from provider (e.g. Printful color_code); tint applies only on opaque garment pixels. */
   garmentColorHex?: string | null;
+  title?: string;
   onChange: (placement: DesignPlacement) => void;
   onArtworkSize?: (width: number, height: number) => void;
 }) {
@@ -221,7 +223,7 @@ export function PlacementCanvas({
   return (
     <div className="space-y-2">
       <div>
-        <h3 className="text-sm font-semibold tracking-tight">Placement</h3>
+        <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
         <p className="text-xs text-muted-foreground">
           Position artwork on the max print area. Rulers start at 0,0 (top-left).
         </p>

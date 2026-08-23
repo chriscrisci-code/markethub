@@ -141,25 +141,14 @@ export function ProductDesigner({
     useState<ProviderDesignAdjustmentRow | null>(
       initialAdjustments.find((a) => a.status === "proposed") ?? null
     );
-  const [template, setTemplate] = useState<ProviderTemplate | null>(null);
+  const [templates, setTemplates] = useState<
+    Record<ArtworkSide, ProviderTemplate | null>
+  >({ front: null, back: null });
   const [mockupStatus, setMockupStatus] = useState<
     "idle" | "pending" | "completed" | "failed"
   >("idle");
   const [mockupUrls, setMockupUrls] = useState<string[]>([]);
   const [mockupError, setMockupError] = useState<string | null>(null);
-
-  // If active side isn't available on this product, fall back to front
-  useEffect(() => {
-    if (activeSide === "back" && !sideAreas.back) {
-      setActiveSide("front");
-    }
-  }, [activeSide, sideAreas.back]);
-
-  const printableArea =
-    activeSide === "back" ? sideAreas.back : sideAreas.front;
-  const artworkUrl = artworkUrls[activeSide];
-  const placement = placements[activeSide];
-  const artworkSize = artworkSizes[activeSide];
 
   const previewColor = selectedColors[0] ?? null;
   const previewColorHex = previewColor
@@ -168,29 +157,45 @@ export function ProductDesigner({
   const previewSize = selectedSizes[0] ?? selectedProduct?.sizes[0] ?? null;
 
   useEffect(() => {
-    if (!selectedProduct || !printableArea) {
-      setTemplate(null);
+    if (!selectedProduct) {
+      setTemplates({ front: null, back: null });
       return;
     }
 
     let cancelled = false;
-    void fetchProviderTemplate(
-      providerKey,
-      selectedProduct.id,
-      printableArea.id,
-      selectedColors[0]
-    ).then((result) => {
-      if (!cancelled) {
-        setTemplate(result.template);
-      }
+    const color = selectedColors[0];
+
+    void Promise.all(
+      (["front", "back"] as const).map(async (side) => {
+        const area = sideAreas[side];
+        if (!area) return [side, null] as const;
+        const result = await fetchProviderTemplate(
+          providerKey,
+          selectedProduct.id,
+          area.id,
+          color
+        );
+        return [side, result.template] as const;
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      setTemplates({
+        front: entries.find(([s]) => s === "front")?.[1] ?? null,
+        back: entries.find(([s]) => s === "back")?.[1] ?? null,
+      });
     });
 
     return () => {
       cancelled = true;
     };
-  }, [providerKey, selectedProduct, printableArea, selectedColors]);
+  }, [providerKey, selectedProduct, sideAreas, selectedColors]);
 
   async function handleGenerateMockup() {
+    const printableArea = sideAreas[activeSide];
+    const artworkUrl = artworkUrls[activeSide];
+    const placement = placements[activeSide];
+    const artworkSize = artworkSizes[activeSide];
+
     if (!selectedProduct || !printableArea || !artworkUrl) {
       toast.error(`Upload ${activeSide} artwork and select a product first.`);
       return;
@@ -274,19 +279,21 @@ export function ProductDesigner({
     return estimateMarginCents(salePriceCents, selectedProduct.baseCostCents);
   }, [salePriceCents, selectedProduct]);
 
-  const handleArtworkSize = useCallback(
-    (width: number, height: number) => {
+  const handleArtworkSizeFor = useCallback(
+    (side: ArtworkSide) => (width: number, height: number) => {
       setArtworkSizes((prev) => ({
         ...prev,
-        [activeSide]: { width, height },
+        [side]: { width, height },
       }));
-      void updateArtworkDimensions(itemId, width, height, activeSide);
+      void updateArtworkDimensions(itemId, width, height, side);
     },
-    [itemId, activeSide]
+    [itemId]
   );
 
-  function setActivePlacement(next: DesignPlacement) {
-    setPlacements((prev) => ({ ...prev, [activeSide]: next }));
+  function setPlacementFor(side: ArtworkSide) {
+    return (next: DesignPlacement) => {
+      setPlacements((prev) => ({ ...prev, [side]: next }));
+    };
   }
 
   function handleProductChange(productId: string) {
@@ -479,31 +486,6 @@ export function ProductDesigner({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant={activeSide === "front" ? "default" : "outline"}
-          onClick={() => setActiveSide("front")}
-        >
-          Front
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={activeSide === "back" ? "default" : "outline"}
-          disabled={!sideAreas.back}
-          onClick={() => setActiveSide("back")}
-        >
-          Back
-        </Button>
-        {!sideAreas.back ? (
-          <span className="self-center text-xs text-muted-foreground">
-            This product has no back print area
-          </span>
-        ) : null}
-      </div>
-
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-4">
           <div className="space-y-2">
@@ -519,14 +501,13 @@ export function ProductDesigner({
                 </option>
               ))}
             </select>
-            {printableArea ? (
-              <p className="text-xs text-muted-foreground">
-                {activeSide === "back" ? "Back" : "Front"} max print:{" "}
-                {printableArea.label} · {printableArea.widthInches}&quot; ×{" "}
-                {printableArea.heightInches}&quot; ({printableArea.widthPx} ×{" "}
-                {printableArea.heightPx} px)
-              </p>
-            ) : null}
+            <p className="text-xs text-muted-foreground">
+              Front: {sideAreas.front.label} · {sideAreas.front.widthInches}
+              &quot; × {sideAreas.front.heightInches}&quot;
+              {sideAreas.back
+                ? ` · Back: ${sideAreas.back.label} · ${sideAreas.back.widthInches}" × ${sideAreas.back.heightInches}"`
+                : null}
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -606,57 +587,95 @@ export function ProductDesigner({
           ) : null}
         </div>
 
-        <div className="space-y-6">
-          {printableArea ? (
+        <div className="space-y-8">
+          {sideAreas.front ? (
             <PlacementCanvas
-              artworkUrl={artworkUrl}
-              areaWidthPx={printableArea.widthPx}
-              areaHeightPx={printableArea.heightPx}
-              areaWidthInches={printableArea.widthInches}
-              areaHeightInches={printableArea.heightInches}
-              placement={placement}
-              template={template}
+              title="Placement — Front"
+              artworkUrl={artworkUrls.front}
+              areaWidthPx={sideAreas.front.widthPx}
+              areaHeightPx={sideAreas.front.heightPx}
+              areaWidthInches={sideAreas.front.widthInches}
+              areaHeightInches={sideAreas.front.heightInches}
+              placement={placements.front}
+              template={templates.front}
               garmentColorHex={previewColorHex}
               previewPlacement={
+                activeSide === "front" &&
                 proposedAdjustment?.status === "proposed"
                   ? (proposedAdjustment.adjustment as DesignPlacement)
                   : null
               }
-              onChange={setActivePlacement}
-              onArtworkSize={handleArtworkSize}
+              onChange={setPlacementFor("front")}
+              onArtworkSize={handleArtworkSizeFor("front")}
             />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No printable area for this side.
-            </p>
-          )}
+          ) : null}
+
+          {sideAreas.back ? (
+            <PlacementCanvas
+              title="Placement — Back"
+              artworkUrl={artworkUrls.back}
+              areaWidthPx={sideAreas.back.widthPx}
+              areaHeightPx={sideAreas.back.heightPx}
+              areaWidthInches={sideAreas.back.widthInches}
+              areaHeightInches={sideAreas.back.heightInches}
+              placement={placements.back}
+              template={templates.back}
+              garmentColorHex={previewColorHex}
+              previewPlacement={
+                activeSide === "back" &&
+                proposedAdjustment?.status === "proposed"
+                  ? (proposedAdjustment.adjustment as DesignPlacement)
+                  : null
+              }
+              onChange={setPlacementFor("back")}
+              onArtworkSize={handleArtworkSizeFor("back")}
+            />
+          ) : null}
 
           <div className="space-y-3 rounded-xl border p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="text-sm font-semibold tracking-tight">Mockup</h3>
                 <p className="text-xs text-muted-foreground">
-                  {activeSide === "back" ? "Back" : "Front"} mockup for{" "}
-                  {previewColor ?? "selected color"} / {previewSize ?? "size"}.
+                  Generate a Printful mockup for the selected side.
                 </p>
               </div>
-              <Button
-                type="button"
-                size="sm"
-                disabled={
-                  isPending ||
-                  mockupStatus === "pending" ||
-                  !artworkUrl ||
-                  providerKey !== "printful"
-                }
-                onClick={() => {
-                  void handleGenerateMockup();
-                }}
-              >
-                {mockupStatus === "pending"
-                  ? "Generating…"
-                  : "Generate mockup"}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={activeSide === "front" ? "default" : "outline"}
+                  onClick={() => setActiveSide("front")}
+                >
+                  Front
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={activeSide === "back" ? "default" : "outline"}
+                  disabled={!sideAreas.back}
+                  onClick={() => setActiveSide("back")}
+                >
+                  Back
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={
+                    isPending ||
+                    mockupStatus === "pending" ||
+                    !artworkUrls[activeSide] ||
+                    providerKey !== "printful"
+                  }
+                  onClick={() => {
+                    void handleGenerateMockup();
+                  }}
+                >
+                  {mockupStatus === "pending"
+                    ? "Generating…"
+                    : "Generate mockup"}
+                </Button>
+              </div>
             </div>
 
             {providerKey !== "printful" ? (
@@ -798,7 +817,7 @@ export function ProductDesigner({
         <Button
           type="button"
           variant="outline"
-          disabled={isPending || !artworkUrl}
+          disabled={isPending || !artworkUrls[activeSide]}
           onClick={handleValidate}
         >
           Validate {activeSide === "back" ? "Back" : "Front"}

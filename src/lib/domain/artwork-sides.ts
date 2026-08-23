@@ -60,20 +60,32 @@ export function getProductSideAreas(product: ProviderProduct): {
   front: PrintableArea | null;
   back: PrintableArea | null;
 } {
-  const byId = (id: string) =>
-    product.printableAreas.find((a) => a.id === id) ?? null;
+  let front =
+    product.printableAreas.find(
+      (a) =>
+        a.id.toLowerCase() === "front" ||
+        a.label.toLowerCase().includes("front")
+    ) ?? null;
+  let back =
+    product.printableAreas.find(
+      (a) =>
+        a.id.toLowerCase() === "back" || a.label.toLowerCase().includes("back")
+    ) ?? null;
 
-  let front = byId("front");
-  let back = byId("back");
-
-  if (!front && !back) {
-    front = product.printableAreas[0] ?? null;
-    back = product.printableAreas[1] ?? null;
-  } else if (!front) {
+  if (!front) {
     front =
-      product.printableAreas.find((a) => a.id !== "back") ??
+      product.printableAreas.find((a) => a.id.toLowerCase() !== "back") ??
       product.printableAreas[0] ??
       null;
+  }
+
+  // Apparel often omits an explicit back row; mirror front dims so back art can be placed.
+  if (!back && front) {
+    back = {
+      ...front,
+      id: "back",
+      label: "Back print",
+    };
   }
 
   return { front, back };
