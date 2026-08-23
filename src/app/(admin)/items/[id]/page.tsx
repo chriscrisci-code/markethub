@@ -131,6 +131,10 @@ export default async function ItemDetailPage({
             providerKey={providerKey}
             salePriceCents={item.base_price_cents}
             artworkUrls={{ front: frontUrl, back: backUrl }}
+            artworkStoragePaths={{
+              front: bySide.front?.storage_path ?? null,
+              back: bySide.back?.storage_path ?? null,
+            }}
             products={products}
             initialDesign={item.item_designs}
             initialVariants={item.item_variants}

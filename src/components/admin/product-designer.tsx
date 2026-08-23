@@ -70,6 +70,7 @@ export function ProductDesigner({
   providerKey,
   salePriceCents,
   artworkUrls,
+  artworkStoragePaths,
   products,
   initialDesign,
   initialVariants,
@@ -79,6 +80,7 @@ export function ProductDesigner({
   providerKey: string;
   salePriceCents: number;
   artworkUrls: Record<ArtworkSide, string | null>;
+  artworkStoragePaths: Record<ArtworkSide, string | null>;
   products: ProviderProduct[];
   initialDesign: ItemDesign | null;
   initialVariants: ItemVariant[];
@@ -213,23 +215,38 @@ export function ProductDesigner({
     setMockupError(null);
     setMockupUrls([]);
     setMockupStatus("pending");
-    setMockupProgress("Resolving variant → uploading art → create-task…");
+    setMockupProgress("Resolving variant → create-task…");
 
+    const MOCKUP_START_TIMEOUT_MS = 45_000;
     let started: Awaited<ReturnType<typeof startProviderMockup>>;
     try {
-      started = await startProviderMockup({
-        providerKey,
-        productId: selectedProduct.id,
-        color: previewColor,
-        size: previewSize,
-        areaId: area.id || "front",
-        artworkUrl,
-        areaWidthPx: area.widthPx,
-        areaHeightPx: area.heightPx,
-        placement,
-        artworkWidthPx,
-        artworkHeightPx,
-      });
+      started = await Promise.race([
+        startProviderMockup({
+          providerKey,
+          productId: selectedProduct.id,
+          color: previewColor,
+          size: previewSize,
+          areaId: area.id || "front",
+          artworkUrl,
+          artworkStoragePath: artworkStoragePaths.front,
+          areaWidthPx: area.widthPx,
+          areaHeightPx: area.heightPx,
+          placement,
+          artworkWidthPx,
+          artworkHeightPx,
+        }),
+        new Promise<never>((_, reject) => {
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "Mockup start timed out after 45s. Try again in a moment."
+                )
+              ),
+            MOCKUP_START_TIMEOUT_MS
+          );
+        }),
+      ]);
     } catch (error) {
       const message =
         error instanceof Error

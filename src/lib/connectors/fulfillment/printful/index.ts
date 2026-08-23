@@ -1,4 +1,4 @@
-import { hasPrintfulToken, printfulFetch, uploadArtworkUrlToPrintful } from "./client";
+import { hasPrintfulToken, printfulFetch } from "./client";
 import type {
   BillingInfo,
   FulfillmentConnector,
@@ -382,21 +382,6 @@ export const printfulConnector: FulfillmentConnector = {
       );
     }
 
-    let hostedUrl: string;
-    try {
-      const uploaded = await uploadArtworkUrlToPrintful(
-        input.artworkUrl,
-        `mockup-${input.productId}-front.png`
-      );
-      hostedUrl = uploaded.url;
-    } catch (error) {
-      throw new Error(
-        `Artwork upload to Printful failed: ${
-          error instanceof Error ? error.message : "unknown error"
-        }`
-      );
-    }
-
     const aspect =
       input.artworkWidthPx > 0
         ? input.artworkHeightPx / input.artworkWidthPx
@@ -422,7 +407,7 @@ export const printfulConnector: FulfillmentConnector = {
             files: [
               {
                 placement: input.areaId || "front",
-                image_url: hostedUrl,
+                image_url: input.artworkUrl,
                 position: {
                   area_width: input.areaWidthPx,
                   area_height: input.areaHeightPx,

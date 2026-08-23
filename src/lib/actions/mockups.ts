@@ -2,7 +2,25 @@
 
 import { getFulfillmentConnector } from "@/lib/connectors/fulfillment/registry";
 import type { ProviderMockupResult } from "@/lib/connectors/fulfillment/types";
+import { createClient } from "@/lib/supabase/server";
 import type { DesignPlacement } from "@/lib/types/database";
+
+async function freshArtworkUrlForMockup(
+  storagePath: string
+): Promise<string> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.storage
+    .from("artwork")
+    .createSignedUrl(storagePath, 60 * 60 * 24);
+
+  if (error || !data?.signedUrl) {
+    throw new Error(
+      error?.message ?? "Could not create artwork URL for mockup."
+    );
+  }
+
+  return data.signedUrl;
+}
 
 /** Same shape as the first working mockup: one print file (usually front). */
 export async function startProviderMockup(input: {
@@ -12,6 +30,7 @@ export async function startProviderMockup(input: {
   size: string;
   areaId: string;
   artworkUrl: string;
+  artworkStoragePath?: string | null;
   areaWidthPx: number;
   areaHeightPx: number;
   placement: DesignPlacement;
@@ -25,8 +44,25 @@ export async function startProviderMockup(input: {
     };
   }
 
+  let artworkUrl = input.artworkUrl;
+  if (input.artworkStoragePath) {
+    try {
+      artworkUrl = await freshArtworkUrlForMockup(input.artworkStoragePath);
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not prepare artwork URL for mockup.",
+      };
+    }
+  }
+
   try {
-    const { taskKey } = await connector.startMockupGeneration(input);
+    const { taskKey } = await connector.startMockupGeneration({
+      ...input,
+      artworkUrl,
+    });
     return { taskKey };
   } catch (error) {
     return {
