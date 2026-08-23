@@ -149,6 +149,7 @@ export function ProductDesigner({
   >("idle");
   const [mockupUrls, setMockupUrls] = useState<string[]>([]);
   const [mockupError, setMockupError] = useState<string | null>(null);
+  const [mockupProgress, setMockupProgress] = useState<string | null>(null);
 
   const previewColor = selectedColors[0] ?? null;
   const previewColorHex = previewColor
@@ -200,14 +201,11 @@ export function ProductDesigner({
       return;
     }
 
-    const files = (["front", "back"] as const).flatMap((side) => {
+    const sides = (["front", "back"] as const).flatMap((side) => {
       const area = sideAreas[side];
       const url = artworkUrls[side];
-      const size = artworkSizes[side];
       if (!area || !url) return [];
-      if (size.width <= 0 || size.height <= 0) return [];
 
-      // Don't send a mirrored/synthetic back placement to Printful — it fails the task.
       if (side === "back") {
         const hasRealBack = selectedProduct.printableAreas.some(
           (a) =>
@@ -217,46 +215,49 @@ export function ProductDesigner({
         if (!hasRealBack) return [];
       }
 
+      const size = artworkSizes[side];
       return [
         {
+          side,
           areaId: area.id,
-          artworkUrl: url,
           areaWidthPx: area.widthPx,
           areaHeightPx: area.heightPx,
           placement: placements[side],
-          artworkWidthPx: size.width,
-          artworkHeightPx: size.height,
+          artworkWidthPx: size.width > 0 ? size.width : undefined,
+          artworkHeightPx: size.height > 0 ? size.height : undefined,
         },
       ];
     });
 
-    if (files.length === 0) {
-      toast.error(
-        "Upload artwork and wait for it to load on at least one side (front or back)."
-      );
+    if (sides.length === 0) {
+      toast.error("Upload PNG or JPG artwork on at least one side first.");
       return;
     }
 
     setMockupError(null);
     setMockupUrls([]);
     setMockupStatus("pending");
+    setMockupProgress("Starting Printful task…");
 
     const started = await startProviderMockup({
       providerKey,
+      itemId,
       productId: selectedProduct.id,
       color: previewColor,
       size: previewSize,
-      files,
+      sides,
     });
 
     if (started.error || !started.taskKey) {
       setMockupStatus("failed");
+      setMockupProgress(null);
       setMockupError(started.error ?? "Could not start mockup.");
       toast.error(started.error ?? "Could not start mockup.");
       return;
     }
 
     const taskKey = started.taskKey;
+    setMockupProgress(`Task ${taskKey.slice(0, 12)}… waiting for Printful`);
     const deadline = Date.now() + 90_000;
 
     while (Date.now() < deadline) {
@@ -264,6 +265,7 @@ export function ProductDesigner({
       const polled = await pollProviderMockup(providerKey, taskKey);
       if (polled.error) {
         setMockupStatus("failed");
+        setMockupProgress(null);
         setMockupError(polled.error);
         toast.error(polled.error);
         return;
@@ -271,8 +273,11 @@ export function ProductDesigner({
       const result = polled.result;
       if (!result) continue;
 
+      setMockupProgress(`Status: ${result.status}`);
+
       if (result.status === "failed") {
         setMockupStatus("failed");
+        setMockupProgress(null);
         setMockupError(result.error ?? "Mockup generation failed.");
         toast.error(result.error ?? "Mockup generation failed.");
         return;
@@ -282,6 +287,7 @@ export function ProductDesigner({
         const urls = result.mockups.map((m) => m.mockupUrl);
         setMockupUrls(urls);
         setMockupStatus("completed");
+        setMockupProgress(null);
         if (urls.length === 0) {
           setMockupError("Task completed but no mockup images were returned.");
         } else {
@@ -294,6 +300,7 @@ export function ProductDesigner({
     }
 
     setMockupStatus("failed");
+    setMockupProgress(null);
     setMockupError("Timed out waiting for Printful mockup. Try again.");
     toast.error("Timed out waiting for mockup.");
   }
@@ -661,8 +668,8 @@ export function ProductDesigner({
               <div>
                 <h3 className="text-sm font-semibold tracking-tight">Mockup</h3>
                 <p className="text-xs text-muted-foreground">
-                  Sends front and back artwork together so Printful can return
-                  both views.
+                  Sends front and back PNG/JPG artwork together so Printful can
+                  return both views.
                 </p>
               </div>
               <Button
@@ -692,8 +699,11 @@ export function ProductDesigner({
             ) : null}
 
             {mockupStatus === "pending" ? (
-              <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-                Waiting for Printful mockup…
+              <div className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-muted-foreground">
+                <span>Waiting for Printful mockup…</span>
+                {mockupProgress ? (
+                  <span className="text-xs">{mockupProgress}</span>
+                ) : null}
               </div>
             ) : null}
 

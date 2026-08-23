@@ -114,6 +114,13 @@ export async function uploadArtwork(
     return { error: "Please choose an image file." };
   }
 
+  const allowed = new Set(["image/png", "image/jpeg", "image/jpg"]);
+  if (!allowed.has(file.type)) {
+    return {
+      error: "Artwork must be PNG or JPG (Printful does not accept WebP/HEIC/SVG).",
+    };
+  }
+
   const extension = file.name.split(".").pop() ?? "png";
   const storagePath = `${user.id}/${itemId}/${side}-${Date.now()}.${extension}`;
 

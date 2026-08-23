@@ -27,9 +27,15 @@ export function ArtworkUpload({
   const [isDragging, setIsDragging] = useState(false);
   const title = label ?? (side === "back" ? "Back" : "Front");
 
+  const ALLOWED_TYPES = new Set([
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+  ]);
+
   function uploadFile(file: File) {
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please drop an image file.");
+    if (!ALLOWED_TYPES.has(file.type)) {
+      toast.error("Use a PNG or JPG file. Printful mockups reject WebP, HEIC, and SVG.");
       return;
     }
 
@@ -116,7 +122,7 @@ export function ArtworkUpload({
               ? "Drop to upload"
               : isPending
                 ? "Uploading..."
-                : `Drop or click for ${title.toLowerCase()} art`}
+                : `Drop or click for ${title.toLowerCase()} art (PNG/JPG)`}
           </div>
         )}
       </div>
@@ -129,7 +135,7 @@ export function ArtworkUpload({
         ref={inputRef}
         type="file"
         name="artwork"
-        accept="image/*"
+        accept="image/png,image/jpeg,.png,.jpg,.jpeg"
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0];
