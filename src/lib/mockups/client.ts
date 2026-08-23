@@ -1,18 +1,14 @@
-import type { DesignPlacement } from "@/lib/types/database";
-import type { ProviderMockupResult } from "@/lib/connectors/fulfillment/types";
+import type {
+  MockupPrintFile,
+  ProviderMockupResult,
+} from "@/lib/connectors/fulfillment/types";
 
 export async function startMockupViaApi(input: {
   providerKey: string;
   productId: string;
   color: string;
   size: string;
-  areaId: string;
-  artworkUrl: string;
-  areaWidthPx: number;
-  areaHeightPx: number;
-  placement: DesignPlacement;
-  artworkWidthPx: number;
-  artworkHeightPx: number;
+  files: MockupPrintFile[];
 }): Promise<{ taskKey?: string; error?: string }> {
   const response = await fetch("/api/printful/mockups/start", {
     method: "POST",

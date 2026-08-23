@@ -361,6 +361,10 @@ export const printfulConnector: FulfillmentConnector = {
       throw new Error("PRINTFUL_API_TOKEN is not set.");
     }
 
+    if (input.files.length === 0) {
+      throw new Error("At least one artwork file is required for mockup generation.");
+    }
+
     let variantId: number | null;
     try {
       variantId = await resolvePrintfulVariantId(
@@ -382,17 +386,32 @@ export const printfulConnector: FulfillmentConnector = {
       );
     }
 
-    const aspect =
-      input.artworkWidthPx > 0
-        ? input.artworkHeightPx / input.artworkWidthPx
-        : 1;
-    const width = Math.max(
-      1,
-      Math.round(input.placement.scale * input.areaWidthPx)
-    );
-    const height = Math.max(1, Math.round(width * aspect));
-    const left = Math.round(input.placement.x * input.areaWidthPx);
-    const top = Math.round(input.placement.y * input.areaHeightPx);
+    const printFiles = input.files.map((file) => {
+      const aspect =
+        file.artworkWidthPx > 0
+          ? file.artworkHeightPx / file.artworkWidthPx
+          : 1;
+      const width = Math.max(
+        1,
+        Math.round(file.designPlacement.scale * file.areaWidthPx)
+      );
+      const height = Math.max(1, Math.round(width * aspect));
+      const left = Math.round(file.designPlacement.x * file.areaWidthPx);
+      const top = Math.round(file.designPlacement.y * file.areaHeightPx);
+
+      return {
+        placement: file.placement || "front",
+        image_url: file.artworkUrl,
+        position: {
+          area_width: file.areaWidthPx,
+          area_height: file.areaHeightPx,
+          width,
+          height,
+          top,
+          left,
+        },
+      };
+    });
 
     let created: PrintfulMockupTask;
     try {
@@ -404,20 +423,7 @@ export const printfulConnector: FulfillmentConnector = {
           body: JSON.stringify({
             variant_ids: [variantId],
             format: "jpg",
-            files: [
-              {
-                placement: input.areaId || "front",
-                image_url: input.artworkUrl,
-                position: {
-                  area_width: input.areaWidthPx,
-                  area_height: input.areaHeightPx,
-                  width,
-                  height,
-                  top,
-                  left,
-                },
-              },
-            ],
+            files: printFiles,
           }),
         }
       );

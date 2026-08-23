@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/api/auth";
 import { getFulfillmentConnector } from "@/lib/connectors/fulfillment/registry";
-import type { DesignPlacement } from "@/lib/types/database";
+import type { MockupPrintFile } from "@/lib/connectors/fulfillment/types";
 
 export const maxDuration = 60;
 
@@ -10,13 +10,7 @@ type StartMockupBody = {
   productId: string;
   color: string;
   size: string;
-  areaId: string;
-  artworkUrl: string;
-  areaWidthPx: number;
-  areaHeightPx: number;
-  placement: DesignPlacement;
-  artworkWidthPx: number;
-  artworkHeightPx: number;
+  files: MockupPrintFile[];
 };
 
 export async function POST(request: Request) {
@@ -45,13 +39,7 @@ export async function POST(request: Request) {
       productId: body.productId,
       color: body.color,
       size: body.size,
-      areaId: body.areaId,
-      artworkUrl: body.artworkUrl,
-      areaWidthPx: body.areaWidthPx,
-      areaHeightPx: body.areaHeightPx,
-      placement: body.placement,
-      artworkWidthPx: body.artworkWidthPx,
-      artworkHeightPx: body.artworkHeightPx,
+      files: body.files,
     });
     return NextResponse.json({ taskKey });
   } catch (error) {

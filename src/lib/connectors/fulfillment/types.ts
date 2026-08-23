@@ -109,6 +109,17 @@ export interface ProviderMockupResult {
   error?: string;
 }
 
+export interface MockupPrintFile {
+  /** Printful placement id, e.g. "front" or "back". */
+  placement: string;
+  artworkUrl: string;
+  areaWidthPx: number;
+  areaHeightPx: number;
+  artworkWidthPx: number;
+  artworkHeightPx: number;
+  designPlacement: MasterDesign["placement"];
+}
+
 export interface FulfillmentConnector {
   key: string;
   displayName: string;
@@ -122,13 +133,7 @@ export interface FulfillmentConnector {
     productId: string;
     color: string;
     size: string;
-    areaId: string;
-    artworkUrl: string;
-    areaWidthPx: number;
-    areaHeightPx: number;
-    placement: MasterDesign["placement"];
-    artworkWidthPx: number;
-    artworkHeightPx: number;
+    files: MockupPrintFile[];
   }): Promise<{ taskKey: string }>;
   getMockupTask?(taskKey: string): Promise<ProviderMockupResult>;
   validateDesign(

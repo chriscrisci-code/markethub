@@ -28,6 +28,7 @@ import {
   startMockupViaApi,
 } from "@/lib/mockups/client";
 import type {
+  MockupPrintFile,
   ProviderProduct,
   ProviderTemplate,
 } from "@/lib/connectors/fulfillment/types";
@@ -192,22 +193,35 @@ export function ProductDesigner({
   }, [providerKey, selectedProduct, sideAreas, selectedColors]);
 
   async function handleGenerateMockup() {
-    // Match the original working flow: one front print file.
-    // Printful still returns multiple camera angles (front/back views).
-    const area = sideAreas.front;
-    const artworkUrl = artworkUrls.front;
-    const placement = placements.front;
-    const measured = artworkSizes.front;
-    const artworkWidthPx = measured.width > 0 ? measured.width : 2000;
-    const artworkHeightPx = measured.height > 0 ? measured.height : 2000;
+    const frontArea = sideAreas.front;
+    const frontArtworkUrl = artworkUrls.front;
 
-    if (!selectedProduct || !area || !artworkUrl) {
+    if (!selectedProduct || !frontArea || !frontArtworkUrl) {
       toast.error("Upload front PNG/JPG artwork and select a product first.");
       return;
     }
     if (!previewColor || !previewSize) {
       toast.error("Select at least one color and size for the mockup.");
       return;
+    }
+
+    const files: MockupPrintFile[] = [];
+
+    for (const side of ["front", "back"] as const) {
+      const area = sideAreas[side];
+      const artworkUrl = artworkUrls[side];
+      if (!area || !artworkUrl) continue;
+
+      const measured = artworkSizes[side];
+      files.push({
+        placement: area.id || side,
+        artworkUrl,
+        areaWidthPx: area.widthPx,
+        areaHeightPx: area.heightPx,
+        designPlacement: placements[side],
+        artworkWidthPx: measured.width > 0 ? measured.width : 2000,
+        artworkHeightPx: measured.height > 0 ? measured.height : 2000,
+      });
     }
 
     setMockupError(null);
@@ -224,13 +238,7 @@ export function ProductDesigner({
           productId: selectedProduct.id,
           color: previewColor,
           size: previewSize,
-          areaId: area.id || "front",
-          artworkUrl,
-          areaWidthPx: area.widthPx,
-          areaHeightPx: area.heightPx,
-          placement,
-          artworkWidthPx,
-          artworkHeightPx,
+          files,
         }),
         new Promise<never>((_, reject) => {
           setTimeout(
@@ -560,9 +568,7 @@ export function ProductDesigner({
                   <button
                     key={color}
                     type="button"
-                    onClick={() =>
-                      toggleValue(selectedColors, color, setSelectedColors)
-                    }
+                    onClick={() => setSelectedColors([color])}
                     className={cn(
                       "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm transition-colors",
                       active
