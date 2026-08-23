@@ -9,7 +9,6 @@ import {
   useState,
   useTransition,
 } from "react";
-import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,13 +17,10 @@ import {
   approveDesignAdjustment,
   proposeDesignAutoFix,
   revertDesignAdjustment,
+  updateArtworkDimensions,
   validateItemDesign,
 } from "@/lib/actions/design";
-import {
-  saveItemDesignClient,
-  saveItemVariantsClient,
-  updateArtworkDimensionsClient,
-} from "@/lib/design/client";
+import { saveItemDesignViaApi } from "@/lib/design/client";
 import {
   DEFAULT_PLACEMENT,
   estimateMarginCents,
@@ -346,7 +342,7 @@ export function ProductDesigner({
         ...prev,
         [side]: { width, height },
       }));
-      void updateArtworkDimensionsClient(itemId, width, height, side);
+      void updateArtworkDimensions(itemId, width, height, side);
     },
     [itemId]
   );
@@ -439,47 +435,30 @@ export function ProductDesigner({
     if (isSavingRef.current) return;
 
     isSavingRef.current = true;
-    flushSync(() => {
-      setIsSaving(true);
-    });
-
-    let succeeded = false;
+    setIsSaving(true);
     try {
-      const result = await saveItemDesignClient(itemId, {
+      const variantPairs = selectedColors.flatMap((color) =>
+        selectedSizes.map((size) => ({ color, size }))
+      );
+      const result = await saveItemDesignViaApi(itemId, {
         providerProductRef: productRef,
         printableAreas: areas,
+        variants: variantPairs,
       });
       if (result.error) {
         toast.error(result.error);
         return;
       }
 
-      const variantPairs = selectedColors.flatMap((color) =>
-        selectedSizes.map((size) => ({ color, size }))
-      );
-      const variantResult = await saveItemVariantsClient(itemId, variantPairs);
-      if (variantResult.error) {
-        toast.error(variantResult.error);
-        return;
-      }
-
-      succeeded = true;
+      setValidation({ status: "idle" });
+      toast.success("Design saved.");
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Could not save design."
       );
     } finally {
       isSavingRef.current = false;
-      // Force the button out of "Saving…" before the toast — updates after
-      // await can otherwise stay deferred behind in-flight server work.
-      flushSync(() => {
-        setIsSaving(false);
-      });
-    }
-
-    if (succeeded) {
-      setValidation({ status: "idle" });
-      toast.success("Design saved.");
+      setIsSaving(false);
     }
   }
 
@@ -491,9 +470,13 @@ export function ProductDesigner({
       const productRef = buildProductRef();
       const areas = buildPrintableAreasMap();
       if (productRef && areas.front) {
-        const saved = await saveItemDesignClient(itemId, {
+        const variantPairs = selectedColors.flatMap((color) =>
+          selectedSizes.map((size) => ({ color, size }))
+        );
+        const saved = await saveItemDesignViaApi(itemId, {
           providerProductRef: productRef,
           printableAreas: areas,
+          variants: variantPairs,
         });
         if (saved.error) {
           toast.error(saved.error);
