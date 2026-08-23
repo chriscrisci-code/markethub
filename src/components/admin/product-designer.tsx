@@ -192,45 +192,21 @@ export function ProductDesigner({
   }, [providerKey, selectedProduct, sideAreas, selectedColors]);
 
   async function handleGenerateMockup() {
-    if (!selectedProduct) {
-      toast.error("Select a product first.");
+    // Match the original working flow: one front print file.
+    // Printful still returns multiple camera angles (front/back views).
+    const area = sideAreas.front;
+    const artworkUrl = artworkUrls.front;
+    const placement = placements.front;
+    const measured = artworkSizes.front;
+    const artworkWidthPx = measured.width > 0 ? measured.width : 2000;
+    const artworkHeightPx = measured.height > 0 ? measured.height : 2000;
+
+    if (!selectedProduct || !area || !artworkUrl) {
+      toast.error("Upload front PNG/JPG artwork and select a product first.");
       return;
     }
     if (!previewColor || !previewSize) {
       toast.error("Select at least one color and size for the mockup.");
-      return;
-    }
-
-    const sides = (["front", "back"] as const).flatMap((side) => {
-      const area = sideAreas[side];
-      const url = artworkUrls[side];
-      if (!area || !url) return [];
-
-      if (side === "back") {
-        const hasRealBack = selectedProduct.printableAreas.some(
-          (a) =>
-            a.id.toLowerCase() === "back" ||
-            a.label.toLowerCase().includes("back")
-        );
-        if (!hasRealBack) return [];
-      }
-
-      const size = artworkSizes[side];
-      return [
-        {
-          side,
-          areaId: area.id,
-          areaWidthPx: area.widthPx,
-          areaHeightPx: area.heightPx,
-          placement: placements[side],
-          artworkWidthPx: size.width > 0 ? size.width : undefined,
-          artworkHeightPx: size.height > 0 ? size.height : undefined,
-        },
-      ];
-    });
-
-    if (sides.length === 0) {
-      toast.error("Upload PNG or JPG artwork on at least one side first.");
       return;
     }
 
@@ -241,11 +217,16 @@ export function ProductDesigner({
 
     const started = await startProviderMockup({
       providerKey,
-      itemId,
       productId: selectedProduct.id,
       color: previewColor,
       size: previewSize,
-      sides,
+      areaId: area.id || "front",
+      artworkUrl,
+      areaWidthPx: area.widthPx,
+      areaHeightPx: area.heightPx,
+      placement,
+      artworkWidthPx,
+      artworkHeightPx,
     });
 
     if (started.error || !started.taskKey) {
@@ -668,8 +649,8 @@ export function ProductDesigner({
               <div>
                 <h3 className="text-sm font-semibold tracking-tight">Mockup</h3>
                 <p className="text-xs text-muted-foreground">
-                  Sends front and back PNG/JPG artwork together so Printful can
-                  return both views.
+                  Uses front artwork and placement. Printful returns multiple
+                  product views (including back camera angles).
                 </p>
               </div>
               <Button
@@ -678,7 +659,7 @@ export function ProductDesigner({
                 disabled={
                   isPending ||
                   mockupStatus === "pending" ||
-                  (!artworkUrls.front && !artworkUrls.back) ||
+                  !artworkUrls.front ||
                   providerKey !== "printful"
                 }
                 onClick={() => {
@@ -725,7 +706,7 @@ export function ProductDesigner({
               </div>
             ) : mockupStatus === "idle" && providerKey === "printful" ? (
               <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-                Generate a mockup to see front and back garment renders here.
+                Generate a mockup to see Printful product views here.
               </div>
             ) : null}
           </div>
