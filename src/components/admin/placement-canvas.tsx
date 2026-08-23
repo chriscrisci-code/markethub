@@ -399,14 +399,16 @@ export function PlacementCanvas({
                         globalCompositeOperation="color"
                       />
                     ) : null}
-                    <Rect
-                      x={display.printLeft}
-                      y={display.printTop}
-                      width={display.printWidth}
-                      height={display.printHeight}
-                      fill="#000000"
-                      globalCompositeOperation="destination-out"
-                    />
+                    {/* Fill print area with garment color; outline is drawn above */}
+                    {garmentColorHex ? (
+                      <Rect
+                        x={display.printLeft}
+                        y={display.printTop}
+                        width={display.printWidth}
+                        height={display.printHeight}
+                        fill={garmentColorHex}
+                      />
+                    ) : null}
                   </>
                 ) : null}
               </Layer>
@@ -585,8 +587,8 @@ export function PlacementCanvas({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Blue dashed box = maximum print area. Hold{" "}
-        <kbd className="rounded border px-1">Shift</kbd> or{" "}
+        Blue dashed outline = maximum print area (filled with garment color).
+        Hold <kbd className="rounded border px-1">Shift</kbd> or{" "}
         <kbd className="rounded border px-1">Alt</kbd> for measuring crosshairs
         (inches from print-area 0,0).
         {previewPlacement
