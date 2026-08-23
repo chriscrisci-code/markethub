@@ -10,11 +10,13 @@ import {
   approveDesignAdjustment,
   proposeDesignAutoFix,
   revertDesignAdjustment,
-  saveItemDesign,
-  saveItemVariants,
   updateArtworkDimensions,
   validateItemDesign,
 } from "@/lib/actions/design";
+import {
+  saveItemDesignClient,
+  saveItemVariantsClient,
+} from "@/lib/design/client";
 import {
   DEFAULT_PLACEMENT,
   estimateMarginCents,
@@ -425,7 +427,7 @@ export function ProductDesigner({
     }
 
     startTransition(async () => {
-      const result = await saveItemDesign(itemId, {
+      const result = await saveItemDesignClient(itemId, {
         providerProductRef: productRef,
         printableAreas: areas,
       });
@@ -437,7 +439,7 @@ export function ProductDesigner({
       const variantPairs = selectedColors.flatMap((color) =>
         selectedSizes.map((size) => ({ color, size }))
       );
-      const variantResult = await saveItemVariants(itemId, variantPairs);
+      const variantResult = await saveItemVariantsClient(itemId, variantPairs);
       if (variantResult.error) {
         toast.error(variantResult.error);
         return;
@@ -453,7 +455,7 @@ export function ProductDesigner({
       const productRef = buildProductRef();
       const areas = buildPrintableAreasMap();
       if (productRef && areas.front) {
-        await saveItemDesign(itemId, {
+        await saveItemDesignClient(itemId, {
           providerProductRef: productRef,
           printableAreas: areas,
         });
