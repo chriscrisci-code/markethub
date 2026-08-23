@@ -88,6 +88,8 @@ export function ProductDesigner({
   initialAdjustments: ProviderDesignAdjustmentRow[];
 }) {
   const [isPending, startTransition] = useTransition();
+  const [isSaving, setIsSaving] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState(
     initialDesign?.provider_product_ref?.id ?? products[0]?.id ?? ""
   );
@@ -418,15 +420,17 @@ export function ProductDesigner({
     };
   }
 
-  function handleSaveDesign() {
+  async function handleSaveDesign() {
     const productRef = buildProductRef();
     const areas = buildPrintableAreasMap();
     if (!productRef || !areas.front) {
       toast.error("Choose a product first.");
       return;
     }
+    if (isSaving) return;
 
-    startTransition(async () => {
+    setIsSaving(true);
+    try {
       const result = await saveItemDesignClient(itemId, {
         providerProductRef: productRef,
         printableAreas: areas,
@@ -447,21 +451,48 @@ export function ProductDesigner({
 
       toast.success("Design saved.");
       setValidation({ status: "idle" });
-    });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not save design."
+      );
+    } finally {
+      setIsSaving(false);
+    }
   }
 
-  function handleValidate() {
-    startTransition(async () => {
+  async function handleValidate() {
+    if (isValidating || isSaving) return;
+
+    setIsValidating(true);
+    try {
       const productRef = buildProductRef();
       const areas = buildPrintableAreasMap();
       if (productRef && areas.front) {
-        await saveItemDesignClient(itemId, {
+        const saved = await saveItemDesignClient(itemId, {
           providerProductRef: productRef,
           printableAreas: areas,
         });
+        if (saved.error) {
+          toast.error(saved.error);
+          return;
+        }
       }
 
-      const result = await validateItemDesign(itemId, activeSide);
+      const result = await Promise.race([
+        validateItemDesign(itemId, activeSide),
+        new Promise<never>((_, reject) => {
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "Validate timed out after 30s. Try again in a moment."
+                )
+              ),
+            30_000
+          );
+        }),
+      ]);
+
       if (result.error) {
         toast.error(result.error);
         return;
@@ -478,7 +509,13 @@ export function ProductDesigner({
             "Artwork exceeds this provider's printable area.",
         });
       }
-    });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not validate design."
+      );
+    } finally {
+      setIsValidating(false);
+    }
   }
 
   function handleAutoFix() {
@@ -844,16 +881,26 @@ export function ProductDesigner({
       ) : null}
 
       <div className="flex flex-wrap gap-2">
-        <Button type="button" disabled={isPending} onClick={handleSaveDesign}>
-          {isPending ? "Saving…" : "Save Design"}
+        <Button
+          type="button"
+          disabled={isSaving || isValidating}
+          onClick={() => {
+            void handleSaveDesign();
+          }}
+        >
+          {isSaving ? "Saving…" : "Save Design"}
         </Button>
         <Button
           type="button"
           variant="outline"
-          disabled={isPending || !artworkUrls[activeSide]}
-          onClick={handleValidate}
+          disabled={isSaving || isValidating || !artworkUrls[activeSide]}
+          onClick={() => {
+            void handleValidate();
+          }}
         >
-          Validate {activeSide === "back" ? "Back" : "Front"}
+          {isValidating
+            ? "Validating…"
+            : `Validate ${activeSide === "back" ? "Back" : "Front"}`}
         </Button>
       </div>
     </div>
