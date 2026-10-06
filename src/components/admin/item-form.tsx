@@ -1,12 +1,13 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { updateItem } from "@/lib/actions/items";
+import { updateItemViaApi } from "@/lib/items/client";
 import type { ConnectorRegistry, Item } from "@/lib/types/database";
 import { formatCents } from "@/lib/domain/format";
 
@@ -17,21 +18,44 @@ export function ItemForm({
   item: Item;
   fulfillmentProviders: ConnectorRegistry[];
 }) {
-  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+  const [isSaving, setIsSaving] = useState(false);
 
-  function handleSubmit(formData: FormData) {
-    startTransition(async () => {
-      const result = await updateItem(item.id, formData);
-      if (result?.error) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isSaving) return;
+
+    const formData = new FormData(event.currentTarget);
+    setIsSaving(true);
+    try {
+      const result = await updateItemViaApi(item.id, {
+        name: String(formData.get("name") ?? ""),
+        description: String(formData.get("description") ?? ""),
+        price: String(formData.get("price") ?? "0"),
+        status: String(formData.get("status") ?? "draft"),
+        fulfillment_provider_key: String(
+          formData.get("fulfillment_provider_key") ?? ""
+        ),
+      });
+
+      if (result.error) {
         toast.error(result.error);
-      } else {
-        toast.success("Item saved.");
+        return;
       }
-    });
+
+      toast.success("Item saved.");
+      router.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not save item."
+      );
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
-    <form action={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <Input id="name" name="name" defaultValue={item.name} required />
@@ -93,8 +117,8 @@ export function ItemForm({
         </select>
       </div>
 
-      <Button type="submit" disabled={isPending}>
-        {isPending ? "Saving..." : "Save Changes"}
+      <Button type="submit" disabled={isSaving}>
+        {isSaving ? "Saving..." : "Save Changes"}
       </Button>
     </form>
   );

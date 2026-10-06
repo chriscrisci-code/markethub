@@ -1,3 +1,7 @@
+import {
+  networkErrorMessage,
+  parseJsonResponse,
+} from "@/lib/api/client-fetch";
 import type { ProviderTemplate } from "@/lib/connectors/fulfillment/types";
 
 export async function fetchProviderTemplateViaApi(
@@ -15,19 +19,35 @@ export async function fetchProviderTemplateViaApi(
     params.set("color", color);
   }
 
-  const response = await fetch(`/api/providers/template?${params.toString()}`);
+  try {
+    const response = await fetch(
+      `/api/providers/template?${params.toString()}`
+    );
 
-  const json = (await response.json().catch(() => null)) as {
-    template?: ProviderTemplate | null;
-    error?: string;
-  } | null;
+    const json = await parseJsonResponse<{
+      template?: ProviderTemplate | null;
+      error?: string;
+    }>(response);
 
-  if (!response.ok) {
+    if (response.status === 401) {
+      return {
+        template: null,
+        error: "Session expired. Refresh the page and sign in again.",
+      };
+    }
+
+    if (!response.ok) {
+      return {
+        template: null,
+        error: json?.error ?? `Template fetch failed (${response.status}).`,
+      };
+    }
+
+    return { template: json?.template ?? null, error: json?.error };
+  } catch (error) {
     return {
       template: null,
-      error: json?.error ?? `Template fetch failed (${response.status}).`,
+      error: networkErrorMessage(error, "Could not load product template."),
     };
   }
-
-  return { template: json?.template ?? null, error: json?.error };
 }

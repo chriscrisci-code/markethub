@@ -188,15 +188,36 @@ export function ProductDesigner({
           area.id,
           color
         );
-        return [side, result.template] as const;
+        return [side, result] as const;
       })
-    ).then((entries) => {
-      if (cancelled) return;
-      setTemplates({
-        front: entries.find(([s]) => s === "front")?.[1] ?? null,
-        back: entries.find(([s]) => s === "back")?.[1] ?? null,
+    )
+      .then((entries) => {
+        if (cancelled) return;
+        setTemplates({
+          front: entries.find(([s]) => s === "front")?.[1]?.template ?? null,
+          back: entries.find(([s]) => s === "back")?.[1]?.template ?? null,
+        });
+        const firstError = entries
+          .map(([, result]) => result?.error)
+          .find(Boolean);
+        // Only surface connectivity/auth issues — missing Printful templates are silent.
+        if (
+          firstError &&
+          (firstError.includes("Could not reach") ||
+            firstError.includes("Session expired"))
+        ) {
+          toast.error(firstError);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setTemplates({ front: null, back: null });
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Could not load product templates."
+        );
       });
-    });
 
     return () => {
       cancelled = true;
