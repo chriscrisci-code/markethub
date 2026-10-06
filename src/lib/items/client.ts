@@ -1,4 +1,5 @@
 import {
+  apiFetch,
   networkErrorMessage,
   parseJsonResponse,
 } from "@/lib/api/client-fetch";
@@ -14,7 +15,7 @@ export async function updateItemViaApi(
   }
 ): Promise<{ success?: true; error?: string }> {
   try {
-    const response = await fetch(`/api/items/${itemId}`, {
+    const response = await apiFetch(`/api/items/${itemId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

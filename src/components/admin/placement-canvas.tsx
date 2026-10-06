@@ -135,10 +135,27 @@ export function PlacementCanvas({
     return { width: artwork.naturalWidth, height: artwork.naturalHeight };
   }, [artwork]);
 
+  const lastReportedSizeRef = useRef<{ width: number; height: number } | null>(
+    null
+  );
+
   useEffect(() => {
-    if (artwork && onArtworkSize) {
-      onArtworkSize(artwork.naturalWidth, artwork.naturalHeight);
+    lastReportedSizeRef.current = null;
+  }, [artworkUrl]);
+
+  useEffect(() => {
+    if (!artwork || !onArtworkSize) return;
+    const width = artwork.naturalWidth;
+    const height = artwork.naturalHeight;
+    if (width <= 0 || height <= 0) return;
+
+    const prev = lastReportedSizeRef.current;
+    if (prev && prev.width === width && prev.height === height) {
+      return;
     }
+
+    lastReportedSizeRef.current = { width, height };
+    onArtworkSize(width, height);
   }, [artwork, onArtworkSize]);
 
   useEffect(() => {

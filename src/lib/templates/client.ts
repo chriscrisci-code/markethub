@@ -1,4 +1,5 @@
 import {
+  apiFetch,
   networkErrorMessage,
   parseJsonResponse,
 } from "@/lib/api/client-fetch";
@@ -20,7 +21,7 @@ export async function fetchProviderTemplateViaApi(
   }
 
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `/api/providers/template?${params.toString()}`
     );
 

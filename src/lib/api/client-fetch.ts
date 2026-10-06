@@ -12,12 +12,26 @@ export function networkErrorMessage(error: unknown, fallback: string): string {
     error.name === "TypeError"
   ) {
     return (
-      "Could not reach the server. If you just returned after a while, " +
-      "check that your Supabase project is not paused, then refresh and sign in again."
+      "Could not reach the server. Hard-refresh the page, sign in again if needed, " +
+      "and retry. If it keeps failing, check Vercel env vars and that Supabase is Healthy."
     );
   }
 
   return message || fallback;
+}
+
+/** Shared fetch defaults for same-origin admin API calls. */
+export function apiFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  return fetch(input, {
+    credentials: "same-origin",
+    ...init,
+    headers: {
+      ...(init?.headers ?? {}),
+    },
+  });
 }
 
 export async function parseJsonResponse<T>(

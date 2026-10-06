@@ -1,4 +1,5 @@
 import {
+  apiFetch,
   networkErrorMessage,
   parseJsonResponse,
 } from "@/lib/api/client-fetch";
@@ -15,7 +16,7 @@ export async function startMockupViaApi(input: {
   files: MockupPrintFile[];
 }): Promise<{ taskKey?: string; error?: string }> {
   try {
-    const response = await fetch("/api/printful/mockups/start", {
+    const response = await apiFetch("/api/printful/mockups/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
@@ -52,7 +53,7 @@ export async function pollMockupViaApi(
 ): Promise<{ result?: ProviderMockupResult; error?: string }> {
   try {
     const params = new URLSearchParams({ providerKey, taskKey });
-    const response = await fetch(
+    const response = await apiFetch(
       `/api/printful/mockups/task?${params.toString()}`
     );
 

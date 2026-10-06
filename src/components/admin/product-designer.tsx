@@ -359,13 +359,28 @@ export function ProductDesigner({
     return estimateMarginCents(salePriceCents, selectedProduct.baseCostCents);
   }, [salePriceCents, selectedProduct]);
 
-  const handleArtworkSizeFor = useCallback(
-    (side: ArtworkSide) => (width: number, height: number) => {
-      setArtworkSizes((prev) => ({
-        ...prev,
-        [side]: { width, height },
-      }));
-      updateArtworkDimensionsViaApi(itemId, width, height, side);
+  const handleFrontArtworkSize = useCallback(
+    (width: number, height: number) => {
+      setArtworkSizes((prev) => {
+        if (prev.front.width === width && prev.front.height === height) {
+          return prev;
+        }
+        return { ...prev, front: { width, height } };
+      });
+      updateArtworkDimensionsViaApi(itemId, width, height, "front");
+    },
+    [itemId]
+  );
+
+  const handleBackArtworkSize = useCallback(
+    (width: number, height: number) => {
+      setArtworkSizes((prev) => {
+        if (prev.back.width === width && prev.back.height === height) {
+          return prev;
+        }
+        return { ...prev, back: { width, height } };
+      });
+      updateArtworkDimensionsViaApi(itemId, width, height, "back");
     },
     [itemId]
   );
@@ -720,7 +735,7 @@ export function ProductDesigner({
                   : null
               }
               onChange={setPlacementFor("front")}
-              onArtworkSize={handleArtworkSizeFor("front")}
+              onArtworkSize={handleFrontArtworkSize}
             />
           ) : null}
 
@@ -742,7 +757,7 @@ export function ProductDesigner({
                   : null
               }
               onChange={setPlacementFor("back")}
-              onArtworkSize={handleArtworkSizeFor("back")}
+              onArtworkSize={handleBackArtworkSize}
             />
           ) : null}
 
