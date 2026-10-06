@@ -15,8 +15,10 @@ import {
   getFulfillmentProviders,
   getItem,
   getMarketplaceConnectors,
+  getMockupUrl,
 } from "@/lib/data/queries";
 import { artworkBySide } from "@/lib/domain/artwork-sides";
+import type { SavedMockup } from "@/lib/mockups/saved-client";
 
 export const maxDuration = 60;
 
@@ -78,6 +80,18 @@ export default async function ItemDetailPage({
     item.channel_listings
   );
 
+  const initialSavedMockups: SavedMockup[] = await Promise.all(
+    (item.item_mockups ?? []).map(async (mockup) => ({
+      id: mockup.id,
+      item_id: mockup.item_id,
+      storage_path: mockup.storage_path,
+      source_url: mockup.source_url,
+      label: mockup.label,
+      created_at: mockup.created_at,
+      url: await getMockupUrl(mockup.storage_path),
+    }))
+  );
+
   return (
     <ItemArtworkProvider
       itemId={item.id}
@@ -117,6 +131,7 @@ export default async function ItemDetailPage({
           initialDesign={item.item_designs}
           initialVariants={item.item_variants}
           initialAdjustments={item.provider_design_adjustments}
+          initialSavedMockups={initialSavedMockups}
           catalogError={catalogError}
         />
 

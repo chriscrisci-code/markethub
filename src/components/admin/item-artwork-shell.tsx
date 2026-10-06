@@ -17,6 +17,7 @@ import {
   type ArtworkSideState,
 } from "@/lib/artwork/client";
 import type { ProviderProduct } from "@/lib/connectors/fulfillment/types";
+import type { SavedMockup } from "@/lib/mockups/saved-client";
 import type {
   ArtworkSide,
   ItemDesign,
@@ -196,6 +197,7 @@ export function ItemProductDesignerCard({
   initialDesign,
   initialVariants,
   initialAdjustments,
+  initialSavedMockups = [],
   catalogError,
 }: {
   providerKey: string;
@@ -204,6 +206,7 @@ export function ItemProductDesignerCard({
   initialDesign: ItemDesign | null;
   initialVariants: ItemVariant[];
   initialAdjustments: ProviderDesignAdjustmentRow[];
+  initialSavedMockups?: SavedMockup[];
   catalogError: string | null;
 }) {
   const { itemId, artworkUrls } = useItemArtwork();
@@ -228,6 +231,7 @@ export function ItemProductDesignerCard({
           initialDesign={initialDesign}
           initialVariants={initialVariants}
           initialAdjustments={initialAdjustments}
+          initialSavedMockups={initialSavedMockups}
         />
       </CardContent>
     </Card>

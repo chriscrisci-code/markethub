@@ -34,7 +34,13 @@ import {
   pollMockupViaApi,
   startMockupViaApi,
 } from "@/lib/mockups/client";
+import {
+  deleteSavedMockupViaApi,
+  saveMockupViaApi,
+  type SavedMockup,
+} from "@/lib/mockups/saved-client";
 import { fetchProviderTemplateViaApi } from "@/lib/templates/client";
+import { MockupLightbox } from "@/components/admin/mockup-lightbox";
 import type {
   MockupPrintFile,
   ProviderProduct,
@@ -83,6 +89,7 @@ export function ProductDesigner({
   initialDesign,
   initialVariants,
   initialAdjustments,
+  initialSavedMockups = [],
 }: {
   itemId: string;
   providerKey: string;
@@ -92,6 +99,7 @@ export function ProductDesigner({
   initialDesign: ItemDesign | null;
   initialVariants: ItemVariant[];
   initialAdjustments: ProviderDesignAdjustmentRow[];
+  initialSavedMockups?: SavedMockup[];
 }) {
   const [isPending, startTransition] = useTransition();
   const [isSaving, setIsSaving] = useState(false);
@@ -162,6 +170,11 @@ export function ProductDesigner({
   const [mockupUrls, setMockupUrls] = useState<string[]>([]);
   const [mockupError, setMockupError] = useState<string | null>(null);
   const [mockupProgress, setMockupProgress] = useState<string | null>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [savedMockups, setSavedMockups] =
+    useState<SavedMockup[]>(initialSavedMockups);
+  const [savingMockupUrl, setSavingMockupUrl] = useState<string | null>(null);
+  const [deletingMockupId, setDeletingMockupId] = useState<string | null>(null);
 
   const previewColor = selectedColors[0] ?? null;
   const previewColorHex = previewColor
@@ -352,6 +365,46 @@ export function ProductDesigner({
     setMockupProgress(null);
     setMockupError("Timed out waiting for Printful mockup. Try again.");
     toast.error("Timed out waiting for mockup.");
+  }
+
+  useEffect(() => {
+    setSavedMockups(initialSavedMockups);
+  }, [initialSavedMockups]);
+
+  async function handleSaveMockup(url: string, index: number) {
+    if (savingMockupUrl) return;
+    setSavingMockupUrl(url);
+    try {
+      const result = await saveMockupViaApi(
+        itemId,
+        url,
+        `Mockup ${index + 1}`
+      );
+      if (result.error || !result.mockup) {
+        toast.error(result.error ?? "Could not save mockup.");
+        return;
+      }
+      setSavedMockups((prev) => [result.mockup!, ...prev]);
+      toast.success("Saved to Mockups.");
+    } finally {
+      setSavingMockupUrl(null);
+    }
+  }
+
+  async function handleDeleteSavedMockup(mockupId: string) {
+    if (deletingMockupId) return;
+    setDeletingMockupId(mockupId);
+    try {
+      const result = await deleteSavedMockupViaApi(itemId, mockupId);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      setSavedMockups((prev) => prev.filter((m) => m.id !== mockupId));
+      toast.success("Removed saved image.");
+    } finally {
+      setDeletingMockupId(null);
+    }
   }
 
   const marginCents = useMemo(() => {
@@ -811,14 +864,31 @@ export function ProductDesigner({
 
             {mockupUrls.length > 0 ? (
               <div className="grid gap-3 sm:grid-cols-2">
-                {mockupUrls.map((url) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={url}
-                    src={url}
-                    alt="Product mockup"
-                    className="w-full rounded-lg border bg-muted/20 object-contain"
-                  />
+                {mockupUrls.map((url, index) => (
+                  <div key={url} className="space-y-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={url}
+                      alt={`Product mockup ${index + 1}`}
+                      title="Double-click for full resolution"
+                      className="w-full cursor-zoom-in rounded-lg border bg-muted/20 object-contain"
+                      onDoubleClick={() => setLightboxUrl(url)}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      disabled={savingMockupUrl === url}
+                      onClick={() => {
+                        void handleSaveMockup(url, index);
+                      }}
+                    >
+                      {savingMockupUrl === url
+                        ? "Saving…"
+                        : "Save To Mockups"}
+                    </Button>
+                  </div>
                 ))}
               </div>
             ) : mockupStatus === "idle" && providerKey === "printful" ? (
@@ -826,9 +896,73 @@ export function ProductDesigner({
                 Generate a mockup to see Printful product views here.
               </div>
             ) : null}
+
+            <div className="space-y-2 border-t pt-3">
+              <div>
+                <h3 className="text-sm font-semibold tracking-tight">
+                  Saved Images
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Mockups saved to this item. Double-click for full resolution.
+                </p>
+              </div>
+              {savedMockups.length === 0 ? (
+                <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                  No saved mockups yet.
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {savedMockups.map((mockup) => (
+                    <div key={mockup.id} className="space-y-2">
+                      {mockup.url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={mockup.url}
+                          alt={mockup.label ?? "Saved mockup"}
+                          title="Double-click for full resolution"
+                          className="w-full cursor-zoom-in rounded-lg border bg-muted/20 object-contain"
+                          onDoubleClick={() => {
+                            if (mockup.url) setLightboxUrl(mockup.url);
+                          }}
+                        />
+                      ) : (
+                        <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground">
+                          Preview unavailable
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-xs text-muted-foreground">
+                          {mockup.label ?? "Saved mockup"}
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={deletingMockupId === mockup.id}
+                          onClick={() => {
+                            void handleDeleteSavedMockup(mockup.id);
+                          }}
+                        >
+                          {deletingMockupId === mockup.id
+                            ? "Removing…"
+                            : "Remove"}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
+
+      {lightboxUrl ? (
+        <MockupLightbox
+          url={lightboxUrl}
+          onClose={() => setLightboxUrl(null)}
+        />
+      ) : null}
 
       {validation.status === "invalid" ? (
         <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4">

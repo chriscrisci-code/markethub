@@ -98,6 +98,19 @@ export async function getItem(itemId: string): Promise<ItemWithRelations | null>
     item.provider_design_adjustments = [];
   }
 
+  const { data: mockups, error: mockupsError } = await supabase
+    .from("item_mockups")
+    .select("*")
+    .eq("item_id", itemId)
+    .order("created_at", { ascending: false });
+
+  if (mockupsError) {
+    console.error("getItem mockups error:", mockupsError.message);
+    item.item_mockups = [];
+  } else {
+    item.item_mockups = mockups ?? [];
+  }
+
   return item;
 }
 
@@ -134,6 +147,7 @@ function normalizeItem(row: Record<string, unknown>) {
     }),
     item_designs: itemDesigns,
     item_variants: Array.isArray(row.item_variants) ? row.item_variants : [],
+    item_mockups: Array.isArray(row.item_mockups) ? row.item_mockups : [],
     channel_listings: Array.isArray(row.channel_listings)
       ? row.channel_listings
       : [],
@@ -197,6 +211,15 @@ export async function getArtworkUrl(storagePath: string): Promise<string | null>
   const { data } = await supabase.storage
     .from("artwork")
     .createSignedUrl(storagePath, 3600);
+
+  return data?.signedUrl ?? null;
+}
+
+export async function getMockupUrl(storagePath: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.storage
+    .from("mockups")
+    .createSignedUrl(storagePath, 60 * 60 * 24);
 
   return data?.signedUrl ?? null;
 }

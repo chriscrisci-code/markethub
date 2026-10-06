@@ -107,10 +107,20 @@ export interface ChannelListing {
   last_synced_at: string | null;
 }
 
+export interface ItemMockup {
+  id: string;
+  item_id: string;
+  storage_path: string;
+  source_url: string | null;
+  label: string | null;
+  created_at: string;
+}
+
 export interface ItemWithRelations extends Item {
   item_artwork: ItemArtwork[];
   item_designs: ItemDesign | null;
   item_variants: ItemVariant[];
+  item_mockups: ItemMockup[];
   provider_design_adjustments: ProviderDesignAdjustmentRow[];
   channel_listings: (ChannelListing & {
     connector_registry: Pick<ConnectorRegistry, "display_name"> | null;
