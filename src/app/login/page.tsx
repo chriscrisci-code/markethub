@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,21 +12,44 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { signIn } from "@/lib/actions/items";
 
 export default function LoginPage() {
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("admin");
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
 
-  function handleSubmit(formData: FormData) {
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
     setError(null);
-    startTransition(async () => {
-      const result = await signIn(formData);
-      if (result?.error) {
-        setError(result.error);
-        toast.error(result.error);
+    setIsPending(true);
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const json = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        const message = json?.error ?? "Could not sign in.";
+        setError(message);
+        toast.error(message);
+        return;
       }
-    });
+
+      const redirect = new URLSearchParams(window.location.search).get("redirect") ?? "/dashboard";
+      const nextPath =
+        redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/dashboard";
+      window.location.assign(nextPath);
+    } catch {
+      const message = "Could not reach the server.";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setIsPending(false);
+    }
   }
 
   return (
@@ -34,17 +57,20 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Market Hub</CardTitle>
-          <CardDescription>Sign in to manage your business.</CardDescription>
+          <CardDescription>
+            Sign in with admin / admin. Change it later on the Settings page.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="username">Username</Label>
               <Input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
+                id="username"
+                name="username"
+                autoComplete="username"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
                 required
               />
             </div>
@@ -55,12 +81,12 @@ export default function LoginPage() {
                 name="password"
                 type="password"
                 autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
                 required
               />
             </div>
-            {error ? (
-              <p className="text-sm text-destructive">{error}</p>
-            ) : null}
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <Button type="submit" className="w-full" disabled={isPending}>
               {isPending ? "Signing in..." : "Sign in"}
             </Button>

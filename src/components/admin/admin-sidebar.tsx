@@ -1,20 +1,25 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Package, ShoppingBag, Store, LogOut } from "lucide-react";
+import { LayoutDashboard, Package, Settings, ShoppingBag, Store, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { signOut } from "@/lib/actions/items";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/items", label: "Items", icon: Package },
   { href: "/storefronts", label: "Storefronts", icon: Store },
   { href: "/orders", label: "Orders", icon: ShoppingBag },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function AdminSidebar() {
   const pathname = usePathname();
+
+  async function handleSignOut() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.assign("/login");
+  }
 
   return (
     <aside className="flex h-full w-64 flex-col border-r bg-sidebar text-sidebar-foreground">
@@ -48,12 +53,15 @@ export function AdminSidebar() {
       </nav>
 
       <div className="border-t p-4">
-        <form action={signOut}>
-          <Button type="submit" variant="ghost" className="w-full justify-start gap-3">
-            <LogOut className="size-4" />
-            Sign out
-          </Button>
-        </form>
+        <Button
+          type="button"
+          variant="ghost"
+          className="w-full justify-start gap-3"
+          onClick={handleSignOut}
+        >
+          <LogOut className="size-4" />
+          Sign out
+        </Button>
       </div>
     </aside>
   );
