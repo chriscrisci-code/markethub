@@ -102,6 +102,7 @@ export interface ChannelListing {
   id: string;
   item_id: string;
   connector_key: string;
+  connection_id: string | null;
   external_listing_id: string | null;
   sync_status: SyncStatus;
   last_synced_at: string | null;

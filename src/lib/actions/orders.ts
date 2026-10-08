@@ -65,12 +65,15 @@ export async function simulateMarketplaceOrder() {
     | undefined;
   const fulfillmentExpected = productRef?.baseCostCents ?? 1240;
 
-  const sourceConnector =
-    (published.channel_listings as Array<{
+  const sourceListing = (
+    published.channel_listings as Array<{
       connector_key: string;
+      connection_id?: string | null;
       sync_status: string;
-    }> | null)?.find((l) => l.sync_status === "published")?.connector_key ??
-    "mock-marketplace";
+    }> | null
+  )?.find((l) => l.sync_status === "published");
+
+  const sourceConnector = sourceListing?.connector_key ?? "mock-marketplace";
 
   const externalOrderId = `MOCK-ORD-${Date.now().toString(36).toUpperCase()}`;
 
@@ -79,6 +82,7 @@ export async function simulateMarketplaceOrder() {
     .insert({
       user_id: user.id,
       source_connector_key: sourceConnector,
+      source_connection_id: sourceListing?.connection_id ?? null,
       external_order_id: externalOrderId,
       customer: {
         name: "Alex Customer",

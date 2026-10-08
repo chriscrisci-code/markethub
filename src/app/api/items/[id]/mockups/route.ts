@@ -137,7 +137,10 @@ export async function POST(
     });
 
   if (uploadError) {
-    return NextResponse.json({ error: uploadError.message }, { status: 500 });
+    const message = uploadError.message.toLowerCase().includes("bucket")
+      ? 'Storage bucket "mockups" not found. In Supabase SQL Editor, run supabase/migrations/20261006100000_item_mockups.sql'
+      : uploadError.message;
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 
   const { data: row, error: insertError } = await supabase

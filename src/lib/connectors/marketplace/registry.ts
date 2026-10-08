@@ -1,4 +1,5 @@
 import {
+  etsyConnector,
   marketHubStoreConnector,
   mockMarketplaceConnector,
 } from "./mock";
@@ -8,6 +9,7 @@ import type { ChannelListing, ConnectorRegistry } from "@/lib/types/database";
 const marketplaceConnectors: Record<string, MarketplaceConnector> = {
   [mockMarketplaceConnector.key]: mockMarketplaceConnector,
   [marketHubStoreConnector.key]: marketHubStoreConnector,
+  [etsyConnector.key]: etsyConnector,
 };
 
 export function getMarketplaceConnector(
@@ -24,17 +26,28 @@ export function registerMarketplaceConnector(connector: MarketplaceConnector) {
   marketplaceConnectors[connector.key] = connector;
 }
 
+export interface StorefrontConnection {
+  id: string;
+  connector_key: string;
+  display_name: string;
+  status: string;
+}
+
 export function getChannelStatuses(
-  marketplaces: ConnectorRegistry[],
-  listings: ChannelListing[]
+  storefronts: StorefrontConnection[],
+  listings: ChannelListing[],
+  platforms: ConnectorRegistry[]
 ): ChannelStatus[] {
-  return marketplaces.map((marketplace) => {
-    const listing = listings.find((l) => l.connector_key === marketplace.key);
+  return storefronts.map((storefront) => {
+    const listing = listings.find((l) => l.connection_id === storefront.id);
     const syncStatus = listing?.sync_status ?? "not_published";
+    const platform = platforms.find((p) => p.key === storefront.connector_key);
 
     return {
-      connectorKey: marketplace.key,
-      displayName: marketplace.display_name,
+      connectionId: storefront.id,
+      connectorKey: storefront.connector_key,
+      displayName: storefront.display_name,
+      platformName: platform?.display_name ?? storefront.connector_key,
       syncStatus,
       canPublish:
         syncStatus === "not_published" || syncStatus === "sync_error",

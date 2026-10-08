@@ -1,15 +1,11 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  publishToChannel,
-  unpublishFromChannel,
-  updateOnChannel,
-} from "@/lib/actions/channels";
 import type { ChannelStatus } from "@/lib/connectors/marketplace/types";
 
 function statusLabel(status: ChannelStatus["syncStatus"]) {
@@ -37,13 +33,16 @@ function statusVariant(status: ChannelStatus["syncStatus"]) {
 }
 
 function channelHint(connectorKey: string) {
+  if (connectorKey === "etsy") {
+    return "This Etsy shop. Buyer checkout and payouts stay on Etsy. Publishing is a placeholder until OAuth is connected.";
+  }
   if (connectorKey === "market-hub-store") {
-    return "Marks this item as available on your Market Hub Store channel (storefront UI comes later).";
+    return "Your Market Hub storefront. Storefront checkout comes later.";
   }
   if (connectorKey === "mock-marketplace") {
-    return "Simulates publishing to an external marketplace. Real Etsy/Meta connectors replace this later.";
+    return "Simulated external shop for testing the hub.";
   }
-  return "Publishes the master item to this sales channel.";
+  return "Publishes this item to this storefront.";
 }
 
 export function ChannelStatusCards({
@@ -53,43 +52,65 @@ export function ChannelStatusCards({
   itemId: string;
   channels: ChannelStatus[];
 }) {
-  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  function runAction(
+  async function runAction(
     action: "publish" | "update" | "unpublish",
-    connectorKey: string,
-    displayName: string
+    channel: ChannelStatus
   ) {
-    startTransition(async () => {
-      const result =
-        action === "publish"
-          ? await publishToChannel(itemId, connectorKey)
-          : action === "update"
-            ? await updateOnChannel(itemId, connectorKey)
-            : await unpublishFromChannel(itemId, connectorKey);
-
-      if (result.error) {
-        toast.error(result.error);
+    setBusyId(channel.connectionId);
+    try {
+      const response = await fetch(`/api/items/${itemId}/listings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          connectionId: channel.connectionId,
+          action,
+        }),
+      });
+      const json = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        toast.error(json?.error ?? "Channel action failed.");
         return;
       }
-
       if (action === "publish") {
-        toast.success(`Published to ${displayName}.`);
+        toast.success(`Published to ${channel.displayName}.`);
       } else if (action === "update") {
-        toast.success(`Updated on ${displayName}.`);
+        toast.success(`Updated on ${channel.displayName}.`);
       } else {
-        toast.success(`Unpublished from ${displayName}.`);
+        toast.success(`Unpublished from ${channel.displayName}.`);
       }
-    });
+      router.refresh();
+    } catch {
+      toast.error("Could not reach the server.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (channels.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No storefronts yet. Add an Etsy shop or other storefront from Storefronts.
+      </p>
+    );
   }
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {channels.map((channel) => (
-        <Card key={channel.connectorKey}>
+        <Card key={channel.connectionId}>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-base">{channel.displayName}</CardTitle>
+              <div>
+                <CardTitle className="text-base">{channel.displayName}</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  {channel.platformName}
+                </p>
+              </div>
               <Badge variant={statusVariant(channel.syncStatus)}>
                 {statusLabel(channel.syncStatus)}
               </Badge>
@@ -101,14 +122,10 @@ export function ChannelStatusCards({
                 <Button
                   type="button"
                   size="sm"
-                  disabled={isPending}
-                  onClick={() =>
-                    runAction(
-                      "publish",
-                      channel.connectorKey,
-                      channel.displayName
-                    )
-                  }
+                  disabled={busyId === channel.connectionId}
+                  onClick={() => {
+                    void runAction("publish", channel);
+                  }}
                 >
                   {channel.syncStatus === "sync_error"
                     ? "Retry Publish"
@@ -122,14 +139,10 @@ export function ChannelStatusCards({
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={isPending}
-                    onClick={() =>
-                      runAction(
-                        "update",
-                        channel.connectorKey,
-                        channel.displayName
-                      )
-                    }
+                    disabled={busyId === channel.connectionId}
+                    onClick={() => {
+                      void runAction("update", channel);
+                    }}
                   >
                     Update
                   </Button>
@@ -137,14 +150,10 @@ export function ChannelStatusCards({
                     type="button"
                     size="sm"
                     variant="ghost"
-                    disabled={isPending}
-                    onClick={() =>
-                      runAction(
-                        "unpublish",
-                        channel.connectorKey,
-                        channel.displayName
-                      )
-                    }
+                    disabled={busyId === channel.connectionId}
+                    onClick={() => {
+                      void runAction("unpublish", channel);
+                    }}
                   >
                     Unpublish
                   </Button>

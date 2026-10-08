@@ -101,7 +101,9 @@ export function ItemForm({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="fulfillment_provider_key">Fulfillment Provider</Label>
+        <Label htmlFor="fulfillment_provider_key">
+          Fulfillment path for this item
+        </Label>
         <select
           id="fulfillment_provider_key"
           name="fulfillment_provider_key"
@@ -115,6 +117,10 @@ export function ItemForm({
             </option>
           ))}
         </select>
+        <p className="text-xs text-muted-foreground">
+          Each item chooses its own fulfillment provider. Orders for this item
+          are sent there. Buyer payment stays on the storefront that sold it.
+        </p>
       </div>
 
       <Button type="submit" disabled={isSaving}>

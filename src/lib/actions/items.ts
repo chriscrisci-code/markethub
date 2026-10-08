@@ -56,16 +56,6 @@ export async function createItem() {
     throw new Error(error?.message ?? "Failed to create item");
   }
 
-  const marketplaceKeys = ["mock-marketplace", "market-hub-store"];
-  await supabase.from("channel_listings").upsert(
-    marketplaceKeys.map((connector_key) => ({
-      item_id: data.id,
-      connector_key,
-      sync_status: "not_published" as const,
-    })),
-    { onConflict: "item_id,connector_key" }
-  );
-
   revalidatePath("/items");
   redirect(`/items/${data.id}`);
 }

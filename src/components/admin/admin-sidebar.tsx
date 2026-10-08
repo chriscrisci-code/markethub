@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Package, ShoppingBag, LogOut } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingBag, Store, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { signOut } from "@/lib/actions/items";
@@ -9,6 +9,7 @@ import { signOut } from "@/lib/actions/items";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/items", label: "Items", icon: Package },
+  { href: "/storefronts", label: "Storefronts", icon: Store },
   { href: "/orders", label: "Orders", icon: ShoppingBag },
 ];
 

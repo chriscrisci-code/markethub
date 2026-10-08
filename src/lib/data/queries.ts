@@ -41,7 +41,8 @@ export async function getItems(): Promise<ItemWithRelations[]> {
       item_variants (*),
       channel_listings (
         *,
-        connector_registry:connector_key (display_name)
+        connector_registry:connector_key (display_name),
+        storefront:connection_id (display_name)
       ),
       fulfillment_provider:fulfillment_provider_key (display_name)
     `
@@ -69,7 +70,8 @@ export async function getItem(itemId: string): Promise<ItemWithRelations | null>
       item_variants (*),
       channel_listings (
         *,
-        connector_registry:connector_key (display_name)
+        connector_registry:connector_key (display_name),
+        storefront:connection_id (display_name)
       ),
       fulfillment_provider:fulfillment_provider_key (display_name)
     `
@@ -155,19 +157,49 @@ function normalizeItem(row: Record<string, unknown>) {
   };
 }
 
-/** Ensures default marketplace channel rows exist (no revalidate — safe during render). */
-export async function ensureChannelListings(itemId: string) {
+/** One row per connected shop. Creates Market Hub Store + Mock if the user has none. */
+export async function getStorefronts() {
   const supabase = await createClient();
-  const marketplaceKeys = ["mock-marketplace", "market-hub-store"];
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  await supabase.from("channel_listings").upsert(
-    marketplaceKeys.map((connector_key) => ({
-      item_id: itemId,
-      connector_key,
-      sync_status: "not_published" as const,
-    })),
-    { onConflict: "item_id,connector_key" }
-  );
+  if (!user) return [];
+
+  const { count } = await supabase
+    .from("connector_connections")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id);
+
+  if ((count ?? 0) === 0) {
+    await supabase.from("connector_connections").insert([
+      {
+        user_id: user.id,
+        connector_key: "market-hub-store",
+        display_name: "Market Hub Store",
+        status: "connected",
+      },
+      {
+        user_id: user.id,
+        connector_key: "mock-marketplace",
+        display_name: "Mock Marketplace",
+        status: "connected",
+      },
+    ]);
+  }
+
+  const { data, error } = await supabase
+    .from("connector_connections")
+    .select("id, connector_key, display_name, status")
+    .eq("user_id", user.id)
+    .order("display_name");
+
+  if (error) {
+    console.error("getStorefronts error:", error.message);
+    return [];
+  }
+
+  return data ?? [];
 }
 
 export async function getFulfillmentProviders() {

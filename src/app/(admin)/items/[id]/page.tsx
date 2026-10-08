@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChannelStatusCards } from "@/components/admin/channel-status-cards";
 import {
@@ -10,12 +11,12 @@ import { ItemForm } from "@/components/admin/item-form";
 import { getFulfillmentConnector } from "@/lib/connectors/fulfillment/registry";
 import { getChannelStatuses } from "@/lib/connectors/marketplace/registry";
 import {
-  ensureChannelListings,
   getArtworkUrl,
   getFulfillmentProviders,
   getItem,
   getMarketplaceConnectors,
   getMockupUrl,
+  getStorefronts,
 } from "@/lib/data/queries";
 import { artworkBySide } from "@/lib/domain/artwork-sides";
 import type { SavedMockup } from "@/lib/mockups/saved-client";
@@ -32,11 +33,6 @@ export default async function ItemDetailPage({
 
   if (!item) {
     notFound();
-  }
-
-  if (item.channel_listings.length === 0) {
-    await ensureChannelListings(id);
-    item = (await getItem(id))!;
   }
 
   const providerKey = item.fulfillment_provider_key ?? "mock-fulfillment";
@@ -63,10 +59,11 @@ export default async function ItemDetailPage({
   }
 
   const bySide = artworkBySide(item.item_artwork);
-  const [fulfillmentProviders, marketplaces, frontUrl, backUrl] =
+  const [fulfillmentProviders, marketplaces, storefronts, frontUrl, backUrl] =
     await Promise.all([
       getFulfillmentProviders(),
       getMarketplaceConnectors(),
+      getStorefronts(),
       bySide.front?.storage_path
         ? getArtworkUrl(bySide.front.storage_path)
         : Promise.resolve(null),
@@ -76,8 +73,9 @@ export default async function ItemDetailPage({
     ]);
 
   const channelStatuses = getChannelStatuses(
-    marketplaces,
-    item.channel_listings
+    storefronts,
+    item.channel_listings,
+    marketplaces
   );
 
   const initialSavedMockups: SavedMockup[] = await Promise.all(
@@ -137,7 +135,15 @@ export default async function ItemDetailPage({
 
         <Card>
           <CardHeader>
-            <CardTitle>Sales Channels</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Sales Channels</CardTitle>
+              <Link
+                href="/storefronts"
+                className="text-sm text-muted-foreground underline"
+              >
+                Manage storefronts
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
             <ChannelStatusCards itemId={item.id} channels={channelStatuses} />

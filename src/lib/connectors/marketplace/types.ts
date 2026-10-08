@@ -42,8 +42,10 @@ export interface MarketplaceConnector {
 }
 
 export interface ChannelStatus {
+  connectionId: string;
   connectorKey: string;
   displayName: string;
+  platformName: string;
   syncStatus: "not_published" | "published" | "sync_pending" | "sync_error";
   canPublish: boolean;
   canUpdate: boolean;

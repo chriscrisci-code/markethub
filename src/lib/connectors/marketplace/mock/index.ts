@@ -72,3 +72,39 @@ export const marketHubStoreConnector: MarketplaceConnector = {
     return;
   },
 };
+
+/** Placeholder until Etsy OAuth. Each Etsy account is its own storefront row. */
+export const etsyConnector: MarketplaceConnector = {
+  key: "etsy",
+  displayName: "Etsy",
+
+  async connect() {
+    return { externalAccountId: "etsy-pending", status: "connected" };
+  },
+
+  async publishListing(item) {
+    return {
+      externalListingId: `etsy-listing-${item.id.slice(0, 8)}`,
+      syncStatus: "published",
+    };
+  },
+
+  async updateListing(listingRef, item) {
+    return {
+      externalListingId: String(listingRef ?? item.id),
+      syncStatus: "published",
+    };
+  },
+
+  async unpublishListing() {
+    return;
+  },
+
+  async importOrders() {
+    return [];
+  },
+
+  async updateOrderTracking() {
+    return;
+  },
+};
