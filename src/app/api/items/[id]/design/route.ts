@@ -57,28 +57,5 @@ export async function POST(
     return NextResponse.json({ error: designError.message }, { status: 500 });
   }
 
-  const { error: deleteError } = await supabase
-    .from("item_variants")
-    .delete()
-    .eq("item_id", itemId);
-
-  if (deleteError) {
-    return NextResponse.json({ error: deleteError.message }, { status: 500 });
-  }
-
-  if (body.variants.length > 0) {
-    const { error: insertError } = await supabase.from("item_variants").insert(
-      body.variants.map((variant) => ({
-        item_id: itemId,
-        label: `${variant.color} / ${variant.size}`,
-        attributes: { color: variant.color, size: variant.size },
-      }))
-    );
-
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 });
-    }
-  }
-
   return NextResponse.json({ success: true });
 }

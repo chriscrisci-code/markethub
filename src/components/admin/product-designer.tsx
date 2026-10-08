@@ -371,21 +371,25 @@ export function ProductDesigner({
     setSavedMockups(initialSavedMockups);
   }, [initialSavedMockups]);
 
-  async function handleSaveMockup(url: string, index: number) {
+  async function handleSaveMockup(url: string) {
+    const color = selectedColors[0]?.trim();
+    if (!color) {
+      toast.error("Choose a color before saving this mockup.");
+      return;
+    }
     if (savingMockupUrl) return;
     setSavingMockupUrl(url);
     try {
-      const result = await saveMockupViaApi(
-        itemId,
-        url,
-        `Mockup ${index + 1}`
-      );
+      const result = await saveMockupViaApi(itemId, url, {
+        color,
+        sizes: selectedSizes,
+      });
       if (result.error || !result.mockup) {
         toast.error(result.error ?? "Could not save mockup.");
         return;
       }
       setSavedMockups((prev) => [result.mockup!, ...prev]);
-      toast.success("Saved to Mockups.");
+      toast.success(`${color} is now a color for sale.`);
     } finally {
       setSavingMockupUrl(null);
     }
@@ -751,9 +755,7 @@ export function ProductDesigner({
               })}
             </div>
             <p className="text-xs text-muted-foreground">
-              {selectedColors.length * selectedSizes.length} variant
-              {selectedColors.length * selectedSizes.length === 1 ? "" : "s"}{" "}
-              selected
+              Saving a mockup adds the selected color as a variant for sale.
             </p>
           </div>
 
@@ -881,7 +883,7 @@ export function ProductDesigner({
                       className="w-full"
                       disabled={savingMockupUrl === url}
                       onClick={() => {
-                        void handleSaveMockup(url, index);
+                        void handleSaveMockup(url);
                       }}
                     >
                       {savingMockupUrl === url
@@ -903,7 +905,8 @@ export function ProductDesigner({
                   Saved Images
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Mockups saved to this item. Double-click for full resolution.
+                  Each saved image is a color available for sale. Double-click
+                  for full resolution.
                 </p>
               </div>
               {savedMockups.length === 0 ? (
@@ -930,10 +933,19 @@ export function ProductDesigner({
                           Preview unavailable
                         </div>
                       )}
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-xs text-muted-foreground">
-                          {mockup.label ?? "Saved mockup"}
+                      <div className="space-y-0.5 text-xs">
+                        <p>
+                          <span className="text-muted-foreground">Color: </span>
+                          {mockup.color_name ?? mockup.label ?? "Not set"}
                         </p>
+                        <p>
+                          <span className="text-muted-foreground">
+                            Fulfillment:{" "}
+                          </span>
+                          {mockup.fulfillment_provider_name ?? "Not set"}
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-end gap-2">
                         <Button
                           type="button"
                           size="sm"

@@ -87,6 +87,8 @@ export interface ItemVariant {
   attributes: {
     color?: string;
     size?: string;
+    sizes?: string[];
+    fulfillment_provider_key?: string;
   };
 }
 
@@ -114,6 +116,9 @@ export interface ItemMockup {
   storage_path: string;
   source_url: string | null;
   label: string | null;
+  color_name: string | null;
+  fulfillment_provider_key: string | null;
+  variant_id: string | null;
   created_at: string;
 }
 

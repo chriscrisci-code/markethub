@@ -25,7 +25,7 @@ export async function DELETE(
 
   const { data: mockup, error: fetchError } = await supabase
     .from("item_mockups")
-    .select("id, storage_path")
+    .select("id, storage_path, variant_id")
     .eq("id", mockupId)
     .eq("item_id", itemId)
     .maybeSingle();
@@ -49,6 +49,18 @@ export async function DELETE(
 
   if (mockup.storage_path) {
     await supabase.storage.from("mockups").remove([mockup.storage_path]);
+  }
+
+  const variantId = mockup.variant_id as string | null;
+  if (variantId) {
+    const { count } = await supabase
+      .from("item_mockups")
+      .select("id", { count: "exact", head: true })
+      .eq("variant_id", variantId);
+
+    if ((count ?? 0) === 0) {
+      await supabase.from("item_variants").delete().eq("id", variantId);
+    }
   }
 
   return NextResponse.json({ success: true });

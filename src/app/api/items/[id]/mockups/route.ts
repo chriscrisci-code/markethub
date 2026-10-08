@@ -4,7 +4,61 @@ import { requireApiUser } from "@/lib/api/auth";
 type SaveMockupBody = {
   imageUrl: string;
   label?: string;
+  color?: string;
+  sizes?: string[];
 };
+
+type MockupRow = {
+  id: string;
+  item_id: string;
+  storage_path: string;
+  source_url: string | null;
+  label: string | null;
+  color_name: string | null;
+  fulfillment_provider_key: string | null;
+  variant_id: string | null;
+  created_at: string;
+};
+
+async function providerNames(
+  supabase: NonNullable<Awaited<ReturnType<typeof requireApiUser>>["supabase"]>,
+  keys: string[]
+) {
+  const unique = [...new Set(keys.filter(Boolean))];
+  if (unique.length === 0) return new Map<string, string>();
+
+  const { data } = await supabase
+    .from("connector_registry")
+    .select("key, display_name")
+    .in("key", unique);
+
+  return new Map(
+    (data ?? []).map((row) => [row.key as string, row.display_name as string])
+  );
+}
+
+function toSavedMockup(
+  row: MockupRow,
+  url: string | null,
+  names: Map<string, string>
+) {
+  const providerKey = row.fulfillment_provider_key;
+  return {
+    id: row.id,
+    item_id: row.item_id,
+    storage_path: row.storage_path,
+    source_url: row.source_url,
+    label: row.label,
+    color_name: row.color_name,
+    fulfillment_provider_key: providerKey,
+    fulfillment_provider_name: providerKey
+      ? (names.get(providerKey) ?? providerKey)
+      : null,
+    variant_id: row.variant_id,
+    created_at: row.created_at,
+    url,
+  };
+}
 
 function extensionFromContentType(contentType: string | null): string {
   if (!contentType) return "jpg";
@@ -46,20 +100,17 @@ export async function GET(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const typedRows = (rows ?? []) as MockupRow[];
+  const names = await providerNames(
+    supabase,
+    typedRows.map((row) => row.fulfillment_provider_key ?? "")
+  );
   const mockups = await Promise.all(
-    (rows ?? []).map(async (row) => {
+    typedRows.map(async (row) => {
       const { data: signed } = await supabase.storage
         .from("mockups")
         .createSignedUrl(row.storage_path, 60 * 60 * 24);
-      return {
-        id: row.id as string,
-        item_id: row.item_id as string,
-        storage_path: row.storage_path as string,
-        source_url: (row.source_url as string | null) ?? null,
-        label: (row.label as string | null) ?? null,
-        created_at: row.created_at as string,
-        url: signed?.signedUrl ?? null,
-      };
+      return toSavedMockup(row, signed?.signedUrl ?? null, names);
     })
   );
 
@@ -88,9 +139,19 @@ export async function POST(
     return NextResponse.json({ error: "imageUrl is required." }, { status: 400 });
   }
 
+  const color = body.color?.trim() ?? "";
+  if (!color) {
+    return NextResponse.json(
+      { error: "Choose a color before saving this mockup." },
+      { status: 400 }
+    );
+  }
+
+  const sizes = (body.sizes ?? []).map((size) => size.trim()).filter(Boolean);
+
   const { data: item } = await supabase
     .from("items")
-    .select("id")
+    .select("id, fulfillment_provider_key")
     .eq("id", itemId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -98,6 +159,8 @@ export async function POST(
   if (!item) {
     return NextResponse.json({ error: "Item not found." }, { status: 404 });
   }
+
+  const providerKey = (item.fulfillment_provider_key as string | null) ?? null;
 
   let imageResponse: Response;
   try {
@@ -143,38 +206,95 @@ export async function POST(
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
+  const { data: existingVariants, error: variantsError } = await supabase
+    .from("item_variants")
+    .select("id, attributes")
+    .eq("item_id", itemId);
+
+  if (variantsError) {
+    await supabase.storage.from("mockups").remove([storagePath]);
+    return NextResponse.json({ error: variantsError.message }, { status: 500 });
+  }
+
+  const match = (existingVariants ?? []).find((variant) => {
+    const attributes = variant.attributes as { color?: string } | null;
+    return attributes?.color?.trim().toLowerCase() === color.toLowerCase();
+  });
+
+  let variantId = match?.id as string | undefined;
+  let createdVariant = false;
+  const attributes = {
+    color,
+    ...(sizes[0] ? { size: sizes[0] } : {}),
+    ...(sizes.length > 0 ? { sizes } : {}),
+    ...(providerKey ? { fulfillment_provider_key: providerKey } : {}),
+  };
+
+  if (variantId && sizes.length > 0) {
+    await supabase
+      .from("item_variants")
+      .update({ label: color, attributes })
+      .eq("id", variantId);
+  }
+
+  if (!variantId) {
+    const { data: created, error: variantError } = await supabase
+      .from("item_variants")
+      .insert({
+        item_id: itemId,
+        label: color,
+        attributes,
+      })
+      .select("id")
+      .single();
+
+    if (variantError || !created) {
+      await supabase.storage.from("mockups").remove([storagePath]);
+      return NextResponse.json(
+        { error: variantError?.message ?? "Could not create the color variant." },
+        { status: 500 }
+      );
+    }
+    variantId = created.id;
+    createdVariant = true;
+  }
+
   const { data: row, error: insertError } = await supabase
     .from("item_mockups")
     .insert({
       item_id: itemId,
       storage_path: storagePath,
       source_url: body.imageUrl,
-      label: body.label?.trim() || null,
+      label: color,
+      color_name: color,
+      fulfillment_provider_key: providerKey,
+      variant_id: variantId,
     })
     .select("*")
     .single();
 
   if (insertError || !row) {
     await supabase.storage.from("mockups").remove([storagePath]);
+    if (createdVariant && variantId) {
+      await supabase.from("item_variants").delete().eq("id", variantId);
+    }
+    const missingColumn = insertError?.message.toLowerCase().includes("column");
     return NextResponse.json(
-      { error: insertError?.message ?? "Could not save mockup record." },
+      {
+        error: missingColumn
+          ? "Run supabase/migrations/20261008150000_mockup_color_variants.sql in the Supabase SQL Editor, then save again."
+          : (insertError?.message ?? "Could not save mockup record."),
+      },
       { status: 500 }
     );
   }
 
+  const names = await providerNames(supabase, providerKey ? [providerKey] : []);
   const { data: signed } = await supabase.storage
     .from("mockups")
     .createSignedUrl(storagePath, 60 * 60 * 24);
 
   return NextResponse.json({
-    mockup: {
-      id: row.id,
-      item_id: row.item_id,
-      storage_path: row.storage_path,
-      source_url: row.source_url,
-      label: row.label,
-      created_at: row.created_at,
-      url: signed?.signedUrl ?? null,
-    },
+    mockup: toSavedMockup(row as MockupRow, signed?.signedUrl ?? null, names),
   });
 }

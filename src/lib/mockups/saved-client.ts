@@ -10,6 +10,10 @@ export type SavedMockup = {
   storage_path: string;
   source_url: string | null;
   label: string | null;
+  color_name: string | null;
+  fulfillment_provider_key: string | null;
+  fulfillment_provider_name: string | null;
+  variant_id: string | null;
   created_at: string;
   url: string | null;
 };
@@ -41,13 +45,18 @@ export async function listSavedMockupsViaApi(
 export async function saveMockupViaApi(
   itemId: string,
   imageUrl: string,
-  label?: string
+  options: { color: string; sizes?: string[]; label?: string }
 ): Promise<{ mockup?: SavedMockup; error?: string }> {
   try {
     const response = await apiFetch(`/api/items/${itemId}/mockups`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ imageUrl, label }),
+      body: JSON.stringify({
+        imageUrl,
+        color: options.color,
+        sizes: options.sizes ?? [],
+        label: options.label,
+      }),
     });
 
     const json = await parseJsonResponse<{

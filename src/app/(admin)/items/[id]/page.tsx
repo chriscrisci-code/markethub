@@ -78,16 +78,29 @@ export default async function ItemDetailPage({
     marketplaces
   );
 
+  const providerNameByKey = new Map(
+    fulfillmentProviders.map((provider) => [provider.key, provider.display_name])
+  );
+
   const initialSavedMockups: SavedMockup[] = await Promise.all(
-    (item.item_mockups ?? []).map(async (mockup) => ({
-      id: mockup.id,
-      item_id: mockup.item_id,
-      storage_path: mockup.storage_path,
-      source_url: mockup.source_url,
-      label: mockup.label,
-      created_at: mockup.created_at,
-      url: await getMockupUrl(mockup.storage_path),
-    }))
+    (item.item_mockups ?? []).map(async (mockup) => {
+      const providerKey = mockup.fulfillment_provider_key;
+      return {
+        id: mockup.id,
+        item_id: mockup.item_id,
+        storage_path: mockup.storage_path,
+        source_url: mockup.source_url,
+        label: mockup.label,
+        color_name: mockup.color_name ?? null,
+        fulfillment_provider_key: providerKey ?? null,
+        fulfillment_provider_name: providerKey
+          ? (providerNameByKey.get(providerKey) ?? providerKey)
+          : (item.fulfillment_provider?.display_name ?? null),
+        variant_id: mockup.variant_id ?? null,
+        created_at: mockup.created_at,
+        url: await getMockupUrl(mockup.storage_path),
+      };
+    })
   );
 
   return (
