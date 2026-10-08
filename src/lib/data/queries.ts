@@ -28,26 +28,52 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   };
 }
 
+const itemSelect = `
+  *,
+  item_artwork (*),
+  item_designs (*),
+  item_variants (*),
+  channel_listings (
+    *,
+    connector_registry:connector_key (display_name),
+    storefront:connection_id (display_name)
+  ),
+  fulfillment_provider:fulfillment_provider_key (display_name)
+`;
+
+const itemSelectWithoutStorefront = `
+  *,
+  item_artwork (*),
+  item_designs (*),
+  item_variants (*),
+  channel_listings (
+    *,
+    connector_registry:connector_key (display_name)
+  ),
+  fulfillment_provider:fulfillment_provider_key (display_name)
+`;
+
+function missingStorefrontRelation(message: string) {
+  const lower = message.toLowerCase();
+  return lower.includes("connection_id") || lower.includes("storefront");
+}
+
 export async function getItems(): Promise<ItemWithRelations[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("items")
-    .select(
-      `
-      *,
-      item_artwork (*),
-      item_designs (*),
-      item_variants (*),
-      channel_listings (
-        *,
-        connector_registry:connector_key (display_name),
-        storefront:connection_id (display_name)
-      ),
-      fulfillment_provider:fulfillment_provider_key (display_name)
-    `
-    )
+    .select(itemSelect)
     .order("updated_at", { ascending: false });
+
+  if (error && missingStorefrontRelation(error.message)) {
+    const fallback = await supabase
+      .from("items")
+      .select(itemSelectWithoutStorefront)
+      .order("updated_at", { ascending: false });
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   if (error) {
     console.error("getItems error:", error.message);
@@ -60,24 +86,21 @@ export async function getItems(): Promise<ItemWithRelations[]> {
 export async function getItem(itemId: string): Promise<ItemWithRelations | null> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("items")
-    .select(
-      `
-      *,
-      item_artwork (*),
-      item_designs (*),
-      item_variants (*),
-      channel_listings (
-        *,
-        connector_registry:connector_key (display_name),
-        storefront:connection_id (display_name)
-      ),
-      fulfillment_provider:fulfillment_provider_key (display_name)
-    `
-    )
+    .select(itemSelect)
     .eq("id", itemId)
     .maybeSingle();
+
+  if (error && missingStorefrontRelation(error.message)) {
+    const fallback = await supabase
+      .from("items")
+      .select(itemSelectWithoutStorefront)
+      .eq("id", itemId)
+      .maybeSingle();
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   if (error) {
     console.error("getItem error:", error.message);
@@ -190,7 +213,7 @@ export async function getStorefronts() {
 
   const { data, error } = await supabase
     .from("connector_connections")
-    .select("id, connector_key, display_name, status")
+    .select("id, connector_key, display_name, status, external_account_id")
     .eq("user_id", user.id)
     .order("display_name");
 

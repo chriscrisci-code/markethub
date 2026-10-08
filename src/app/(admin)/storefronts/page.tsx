@@ -1,8 +1,13 @@
 import { StorefrontManager } from "@/components/admin/storefront-manager";
 import { getStorefronts } from "@/lib/data/queries";
 
-export default async function StorefrontsPage() {
+export default async function StorefrontsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ etsy?: string }>;
+}) {
   const storefronts = await getStorefronts();
+  const params = await searchParams;
 
   return (
     <div className="space-y-6">
@@ -13,7 +18,7 @@ export default async function StorefrontsPage() {
           separate storefronts.
         </p>
       </div>
-      <StorefrontManager storefronts={storefronts} />
+      <StorefrontManager storefronts={storefronts} notice={params.etsy ?? null} />
     </div>
   );
 }

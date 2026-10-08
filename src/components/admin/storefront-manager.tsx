@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +14,14 @@ export type StorefrontRow = {
   connector_key: string;
   display_name: string;
   status: string;
+  external_account_id?: string | null;
 };
+
+function statusLabel(status: string) {
+  if (status === "connected") return "Connected";
+  if (status === "error") return "Error";
+  return "Disconnected";
+}
 
 const PLATFORMS = [
   { key: "etsy", label: "Etsy" },
@@ -23,13 +31,34 @@ const PLATFORMS = [
 
 export function StorefrontManager({
   storefronts,
+  notice,
 }: {
   storefronts: StorefrontRow[];
+  notice?: string | null;
 }) {
   const router = useRouter();
+  const announced = useRef(false);
   const [displayName, setDisplayName] = useState("");
   const [connectorKey, setConnectorKey] = useState("etsy");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!notice || announced.current) return;
+    announced.current = true;
+    if (notice === "connected") {
+      toast.success("Etsy shop connected.");
+    } else if (notice === "cancelled") {
+      toast.message("Etsy connection cancelled.");
+    } else if (notice === "https") {
+      toast.error(
+        "Etsy requires an https callback. Set ETSY_REDIRECT_URI to the live site and register that URL on the Etsy app."
+      );
+    } else if (notice === "config") {
+      toast.error("Etsy keys are missing on the server.");
+    } else {
+      toast.error("Could not connect this Etsy shop.");
+    }
+  }, [notice]);
 
   async function addStorefront(event: React.FormEvent) {
     event.preventDefault();
@@ -136,6 +165,32 @@ export function StorefrontManager({
                 {PLATFORMS.find((p) => p.key === storefront.connector_key)?.label ??
                   storefront.connector_key}
               </p>
+              <p
+                className={cn(
+                  "text-sm font-medium",
+                  storefront.status === "connected" && "text-emerald-700",
+                  storefront.status === "error" && "text-destructive",
+                  storefront.status !== "connected" &&
+                    storefront.status !== "error" &&
+                    "text-muted-foreground"
+                )}
+              >
+                {statusLabel(storefront.status)}
+              </p>
+              {storefront.connector_key === "etsy" &&
+              storefront.external_account_id ? (
+                <p className="text-xs text-muted-foreground">
+                  Etsy shop {storefront.external_account_id}
+                </p>
+              ) : null}
+              {storefront.connector_key === "etsy" ? (
+                <a
+                  href={`/api/etsy/start?connectionId=${storefront.id}`}
+                  className={cn(buttonVariants({ size: "sm" }), "w-fit")}
+                >
+                  Connect Etsy
+                </a>
+              ) : null}
               <Button
                 type="button"
                 size="sm"

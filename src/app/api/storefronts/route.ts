@@ -84,7 +84,7 @@ export async function POST(request: Request) {
       user_id: user.id,
       connector_key: connectorKey,
       display_name: displayName,
-      status: "connected",
+      status: connectorKey === "etsy" ? "disconnected" : "connected",
     })
     .select("id, connector_key, display_name, status")
     .single();
