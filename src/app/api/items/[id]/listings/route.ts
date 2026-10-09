@@ -5,6 +5,8 @@ import { primaryArtwork } from "@/lib/domain/artwork-sides";
 import type { ItemArtwork } from "@/lib/types/database";
 import type { MasterItem } from "@/lib/connectors/marketplace/types";
 
+export const maxDuration = 60;
+
 type ListingAction = "publish" | "update" | "unpublish";
 
 export async function POST(

@@ -108,6 +108,9 @@ export interface ChannelListing {
   external_listing_id: string | null;
   sync_status: SyncStatus;
   last_synced_at: string | null;
+  publication_state?: string | null;
+  listing_url?: string | null;
+  sync_error?: string | null;
 }
 
 export interface ItemMockup {

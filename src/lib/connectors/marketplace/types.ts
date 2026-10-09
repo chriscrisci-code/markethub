@@ -47,6 +47,9 @@ export interface ChannelStatus {
   displayName: string;
   platformName: string;
   syncStatus: "not_published" | "published" | "sync_pending" | "sync_error";
+  publicationState: string | null;
+  listingUrl: string | null;
+  syncError: string | null;
   canPublish: boolean;
   canUpdate: boolean;
 }

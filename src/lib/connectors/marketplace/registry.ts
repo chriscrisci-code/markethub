@@ -42,6 +42,9 @@ export function getChannelStatuses(
     const listing = listings.find((l) => l.connection_id === storefront.id);
     const syncStatus = listing?.sync_status ?? "not_published";
     const platform = platforms.find((p) => p.key === storefront.connector_key);
+    const hasEtsyDraft =
+      storefront.connector_key === "etsy" &&
+      Boolean(listing?.external_listing_id && /^\d+$/.test(listing.external_listing_id));
 
     return {
       connectionId: storefront.id,
@@ -49,9 +52,13 @@ export function getChannelStatuses(
       displayName: storefront.display_name,
       platformName: platform?.display_name ?? storefront.connector_key,
       syncStatus,
-      canPublish:
-        syncStatus === "not_published" || syncStatus === "sync_error",
-      canUpdate: syncStatus === "published",
+      publicationState: listing?.publication_state ?? null,
+      listingUrl: listing?.listing_url ?? null,
+      syncError: listing?.sync_error ?? null,
+      canPublish: hasEtsyDraft
+        ? false
+        : syncStatus === "not_published" || syncStatus === "sync_error",
+      canUpdate: hasEtsyDraft || syncStatus === "published",
     };
   });
 }

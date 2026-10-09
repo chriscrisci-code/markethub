@@ -24,7 +24,7 @@ const REFRESH_WINDOW_MS = 2 * 60 * 1000;
 
 export const ETSY_OAUTH_COOKIE = "mh_etsy_oauth";
 
-type EtsyConfig = {
+export type EtsyConfig = {
   keystring: string;
   sharedSecret: string;
   redirectUri: string;
@@ -232,7 +232,10 @@ async function saveTokenBundle(
 }
 
 /** Server-only. Returns a usable access token, refreshing it when it is near expiry. */
-export async function getValidEtsyAccessToken(connectionId: string, userId: string) {
+export async function getValidEtsyAccessToken(
+  connectionId: string,
+  userId: string
+): Promise<{ accessToken: string } | { error: string }> {
   const config = etsyConfig();
   if ("error" in config) {
     return { error: "Etsy is not configured." as const };

@@ -8,8 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ChannelStatus } from "@/lib/connectors/marketplace/types";
 
-function statusLabel(status: ChannelStatus["syncStatus"]) {
-  switch (status) {
+function statusLabel(channel: ChannelStatus) {
+  if (channel.connectorKey === "etsy") {
+    if (channel.publicationState === "draft_ready") return "Draft on Etsy";
+    if (channel.publicationState === "partially_synchronized") return "Draft incomplete";
+    if (channel.publicationState === "publishing") return "Sending draft";
+  }
+  switch (channel.syncStatus) {
     case "published":
       return "Published";
     case "sync_pending":
@@ -21,20 +26,21 @@ function statusLabel(status: ChannelStatus["syncStatus"]) {
   }
 }
 
-function statusVariant(status: ChannelStatus["syncStatus"]) {
-  switch (status) {
-    case "published":
-      return "default" as const;
-    case "sync_error":
-      return "destructive" as const;
-    default:
-      return "secondary" as const;
+function statusVariant(channel: ChannelStatus) {
+  if (channel.publicationState === "draft_ready") return "default" as const;
+  if (
+    channel.publicationState === "partially_synchronized" ||
+    channel.syncStatus === "sync_error"
+  ) {
+    return "destructive" as const;
   }
+  if (channel.syncStatus === "published") return "default" as const;
+  return "secondary" as const;
 }
 
 function channelHint(connectorKey: string) {
   if (connectorKey === "etsy") {
-    return "Reconnect this shop after Etsy listing permission is added. Publish creates a draft only, and only after you approve the first live write.";
+    return "Publish draft sends this item to Etsy as a draft. It is not for sale until you make it live in Etsy. Clicking again updates the same draft.";
   }
   if (connectorKey === "market-hub-store") {
     return "Your Market Hub storefront. Storefront checkout comes later.";
@@ -71,22 +77,19 @@ export function ChannelStatusCards({
       });
       const json = (await response.json().catch(() => null)) as {
         error?: string;
-        code?: string;
-        variantCount?: number;
-        imageCount?: number;
+        warning?: string;
       } | null;
       if (!response.ok) {
-        if (json?.code === "approval_required") {
-          toast.message(
-            json.error ??
-              `Draft is ready (${json.variantCount ?? 0} variants, ${json.imageCount ?? 0} images). Live Etsy write is waiting for approval.`
-          );
-          return;
-        }
         toast.error(json?.error ?? "Channel action failed.");
+        router.refresh();
         return;
       }
-      if (action === "publish") {
+      if (channel.connectorKey === "etsy" && action !== "unpublish") {
+        toast.success(
+          json?.warning ||
+            `Draft saved on ${channel.displayName}. It is not for sale yet. Check the price and photos before making it live.`
+        );
+      } else if (action === "publish") {
         toast.success(`Published to ${channel.displayName}.`);
       } else if (action === "update") {
         toast.success(`Updated on ${channel.displayName}.`);
@@ -121,8 +124,8 @@ export function ChannelStatusCards({
                   {channel.platformName}
                 </p>
               </div>
-              <Badge variant={statusVariant(channel.syncStatus)}>
-                {statusLabel(channel.syncStatus)}
+              <Badge variant={statusVariant(channel)}>
+                {statusLabel(channel)}
               </Badge>
             </div>
           </CardHeader>
@@ -158,22 +161,37 @@ export function ChannelStatusCards({
                       void runAction("update", channel);
                     }}
                   >
-                    Update
+                    {channel.connectorKey === "etsy" ? "Update draft" : "Update"}
                   </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={busyId === channel.connectionId}
-                    onClick={() => {
-                      void runAction("unpublish", channel);
-                    }}
-                  >
-                    Unpublish
-                  </Button>
+                  {channel.connectorKey === "etsy" ? null : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={busyId === channel.connectionId}
+                      onClick={() => {
+                        void runAction("unpublish", channel);
+                      }}
+                    >
+                      Unpublish
+                    </Button>
+                  )}
                 </>
               ) : null}
             </div>
+            {channel.listingUrl ? (
+              <a
+                className="text-sm underline"
+                href={channel.listingUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open draft on Etsy
+              </a>
+            ) : null}
+            {channel.syncError ? (
+              <p className="text-xs text-destructive">{channel.syncError}</p>
+            ) : null}
             <p className="text-xs text-muted-foreground">
               {channelHint(channel.connectorKey)}
             </p>
