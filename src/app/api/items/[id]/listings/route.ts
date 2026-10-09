@@ -77,6 +77,20 @@ export async function POST(
   };
 
   try {
+    if (
+      connection.connector_key === "etsy" &&
+      (action === "publish" || action === "update")
+    ) {
+      const { publishEtsyDraft } = await import("@/lib/etsy/publish-draft");
+      const result = await publishEtsyDraft({
+        supabase,
+        userId: user.id,
+        itemId,
+        connectionId,
+      });
+      return NextResponse.json(result.body, { status: result.status });
+    }
+
     if (action === "publish" || action === "update") {
       const result =
         action === "publish"

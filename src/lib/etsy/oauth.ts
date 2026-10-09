@@ -17,8 +17,8 @@ const AUTHORIZE_URL = "https://www.etsy.com/oauth/connect";
 const TOKEN_URL = "https://api.etsy.com/v3/public/oauth/token";
 const API_ROOT = "https://openapi.etsy.com/v3/application";
 
-/** Shop identity only. Listing and order scopes wait until those features exist. */
-export const ETSY_CONNECT_SCOPE = "shops_r";
+/** Shop identity plus listing create/update. Reconnect after this change. */
+export const ETSY_CONNECT_SCOPE = "shops_r listings_r listings_w";
 
 const REFRESH_WINDOW_MS = 2 * 60 * 1000;
 
@@ -34,6 +34,7 @@ type TokenResponse = {
   access_token?: string;
   refresh_token?: string;
   expires_in?: number;
+  scope?: string;
 };
 
 export function etsyRedirectUri(): string | null {
@@ -139,6 +140,7 @@ async function requestToken(
     accessToken: json.access_token,
     refreshToken: json.refresh_token,
     expiresAt: new Date(Date.now() + json.expires_in * 1000).toISOString(),
+    scope: json.scope,
   };
 }
 
@@ -267,6 +269,9 @@ export async function getValidEtsyAccessToken(connectionId: string, userId: stri
 
   try {
     const refreshed = await refreshEtsyTokens(config, bundle.refreshToken);
+    if (!refreshed.scope && bundle.scope) {
+      refreshed.scope = bundle.scope;
+    }
     await saveTokenBundle(connectionId, userId, refreshed);
     return { accessToken: refreshed.accessToken };
   } catch {

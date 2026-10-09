@@ -600,3 +600,36 @@ export async function resolvePrintfulVariantId(
   variantIdCache.set(cacheKey, { at: Date.now(), id });
   return id;
 }
+
+export type PrintfulCatalogVariant = {
+  catalogProductId: string;
+  catalogVariantId: string;
+  colorName: string;
+  colorCode: string | null;
+  sizeName: string;
+  sku: string | null;
+  inStock: boolean;
+  costCents: number;
+  currency: "USD";
+};
+
+/** Catalog variant ids from Printful. These are not store/sync variant ids. */
+export async function listPrintfulCatalogVariants(
+  productId: string
+): Promise<PrintfulCatalogVariant[]> {
+  const detail = await printfulFetch<PrintfulProductDetail>(
+    `/products/${productId}`,
+    { timeoutMs: 20_000 }
+  );
+  return (detail.variants ?? []).map((variant) => ({
+    catalogProductId: String(variant.product_id || productId),
+    catalogVariantId: String(variant.id),
+    colorName: variant.color,
+    colorCode: variant.color_code ?? null,
+    sizeName: variant.size,
+    sku: null,
+    inStock: variant.in_stock !== false,
+    costCents: dollarsToCents(variant.price),
+    currency: "USD" as const,
+  }));
+}

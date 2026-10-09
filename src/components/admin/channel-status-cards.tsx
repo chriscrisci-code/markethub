@@ -34,7 +34,7 @@ function statusVariant(status: ChannelStatus["syncStatus"]) {
 
 function channelHint(connectorKey: string) {
   if (connectorKey === "etsy") {
-    return "This Etsy shop. Buyer checkout and payouts stay on Etsy. Publishing is a placeholder until OAuth is connected.";
+    return "Reconnect this shop after Etsy listing permission is added. Publish creates a draft only, and only after you approve the first live write.";
   }
   if (connectorKey === "market-hub-store") {
     return "Your Market Hub storefront. Storefront checkout comes later.";
@@ -71,8 +71,18 @@ export function ChannelStatusCards({
       });
       const json = (await response.json().catch(() => null)) as {
         error?: string;
+        code?: string;
+        variantCount?: number;
+        imageCount?: number;
       } | null;
       if (!response.ok) {
+        if (json?.code === "approval_required") {
+          toast.message(
+            json.error ??
+              `Draft is ready (${json.variantCount ?? 0} variants, ${json.imageCount ?? 0} images). Live Etsy write is waiting for approval.`
+          );
+          return;
+        }
         toast.error(json?.error ?? "Channel action failed.");
         return;
       }
@@ -127,9 +137,13 @@ export function ChannelStatusCards({
                     void runAction("publish", channel);
                   }}
                 >
-                  {channel.syncStatus === "sync_error"
-                    ? "Retry Publish"
-                    : "Publish"}
+                  {channel.connectorKey === "etsy"
+                    ? channel.syncStatus === "sync_error"
+                      ? "Retry draft"
+                      : "Publish draft"
+                    : channel.syncStatus === "sync_error"
+                      ? "Retry Publish"
+                      : "Publish"}
                 </Button>
               ) : null}
 

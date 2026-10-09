@@ -34,6 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# local secrets (Etsy 2FA backup codes and similar)
+/private
+
 # vercel
 .vercel
 

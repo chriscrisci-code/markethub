@@ -16,6 +16,7 @@ export type EtsyTokenBundle = {
   accessToken: string;
   refreshToken: string;
   expiresAt: string;
+  scope?: string;
 };
 
 function encryptionKey(): Buffer {

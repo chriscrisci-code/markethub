@@ -294,7 +294,31 @@ export async function POST(
     .from("mockups")
     .createSignedUrl(storagePath, 60 * 60 * 24);
 
+  let variantSync: { mapped: number; error?: string } | null = null;
+  if (providerKey === "printful") {
+    const { data: design } = await supabase
+      .from("item_designs")
+      .select("id, provider_product_ref")
+      .eq("item_id", itemId)
+      .maybeSingle();
+    const productRef = design?.provider_product_ref as { id?: string } | null;
+    const catalogProductId = productRef?.id ? String(productRef.id) : "";
+    if (catalogProductId) {
+      const { syncPrintfulColorVariants } = await import(
+        "@/lib/variants/sync-printful"
+      );
+      variantSync = await syncPrintfulColorVariants(supabase, {
+        itemId,
+        mockupId: (row as MockupRow).id,
+        colorName: color,
+        catalogProductId,
+        designId: (design?.id as string | undefined) ?? null,
+      });
+    }
+  }
+
   return NextResponse.json({
     mockup: toSavedMockup(row as MockupRow, signed?.signedUrl ?? null, names),
+    variantSync,
   });
 }
