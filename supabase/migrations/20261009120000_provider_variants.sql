@@ -32,11 +32,12 @@ alter table item_mockups
   add column if not exists catalog_product_id text,
   add column if not exists mapping_status text not null default 'needs_resolution';
 
+-- A saved color can be mapped through size rows while variant_id stays empty.
+-- Rerunning this file must not clear mapping_status = 'mapped'.
 update item_mockups
 set mapping_status = 'needs_resolution'
-where mapping_status is null
-   or color_name is null
-   or variant_id is null;
+where color_name is null
+  and mapping_status is distinct from 'mapped';
 
 create table if not exists item_mockup_variants (
   mockup_id uuid not null references item_mockups(id) on delete cascade,

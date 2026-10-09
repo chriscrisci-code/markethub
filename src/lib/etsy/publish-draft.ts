@@ -141,10 +141,21 @@ export async function publishEtsyDraft(input: {
     problems.push("No Printful sizes are mapped. Re-save a mockup for each color.");
   }
   const mockupRows = (mockups ?? []) as MockupRow[];
-  const unresolved = mockupRows.filter((mockup) => mockup.mapping_status === "needs_resolution");
+  const mappedColors = new Set(mapped.map((variant) => attribute(variant, "color").toLowerCase()));
+  const unresolved = mockupRows.filter((mockup) => {
+    const color = mockup.color_name?.trim().toLowerCase();
+    return !color || !mappedColors.has(color);
+  });
   if (mockupRows.length === 0) problems.push("Save at least one mockup image.");
   if (unresolved.length > 0) {
-    problems.push(`${unresolved.length} saved image(s) still need a Printful size mapping.`);
+    const names = unresolved
+      .map((mockup) => mockup.color_name?.trim())
+      .filter((name): name is string => Boolean(name));
+    problems.push(
+      names.length > 0
+        ? `Re-save the mockup for ${names.join(", ")} so Printful sizes are mapped.`
+        : "Re-save each mockup. A saved image is missing its color."
+    );
   }
   if (problems.length > 0) {
     return fail(400, problems.join(" "), { code: "validation_needed", problems });
