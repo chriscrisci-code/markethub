@@ -262,6 +262,50 @@ export function resolveVariationValue(
   };
 }
 
+export async function getShopProductionPartnerId(
+  config: EtsyConfig,
+  accessToken: string,
+  shopId: string,
+  preferredName: string | null
+) {
+  const result = await etsyGet<{
+    results?: Array<{ production_partner_id?: number; partner_name?: string }>;
+  }>(config, accessToken, `/shops/${shopId}/production-partners`);
+  if (!result.ok) return result;
+
+  const partners = (result.data.results ?? []).filter(
+    (partner): partner is { production_partner_id: number; partner_name?: string } =>
+      typeof partner.production_partner_id === "number"
+  );
+  if (partners.length === 0) {
+    const maker = preferredName ? ` Add ${preferredName} there.` : "";
+    return {
+      ok: false as const,
+      status: 400,
+      error: `This Etsy shop has no production partner. In Etsy, open Shop Manager, then Settings, then Partners you work with.${maker} Then publish the draft again.`,
+    };
+  }
+  if (partners.length === 1) return { ok: true as const, data: partners[0].production_partner_id };
+
+  const wanted = preferredName?.trim().toLowerCase() ?? "";
+  const matches = wanted
+    ? partners.filter((partner) => {
+        const name = (partner.partner_name ?? "").trim().toLowerCase();
+        return name.length > 0 && (name === wanted || name.includes(wanted));
+      })
+    : [];
+  if (matches.length === 1) return { ok: true as const, data: matches[0].production_partner_id };
+
+  const names = partners.map((partner) => partner.partner_name || String(partner.production_partner_id)).join(", ");
+  return {
+    ok: false as const,
+    status: 400,
+    error: preferredName
+      ? `This shop has more than one production partner (${names}). None matches ${preferredName}, so Market Hub did not choose one.`
+      : `This shop has more than one production partner (${names}). Set this item's fulfillment provider so Market Hub can choose the matching partner.`,
+  };
+}
+
 export async function createOrUpdateDraftListing(input: {
   config: EtsyConfig;
   accessToken: string;
@@ -273,6 +317,7 @@ export async function createOrUpdateDraftListing(input: {
   taxonomyId: number;
   shippingProfileId: number;
   readinessStateId: number;
+  productionPartnerId: number;
 }) {
   const fields = new URLSearchParams({
     quantity: "999",
@@ -281,9 +326,11 @@ export async function createOrUpdateDraftListing(input: {
     price: input.price.toFixed(2),
     who_made: "someone_else",
     when_made: "made_to_order",
+    is_supply: "false",
     taxonomy_id: String(input.taxonomyId),
     shipping_profile_id: String(input.shippingProfileId),
     readiness_state_id: String(input.readinessStateId),
+    production_partner_ids: String(input.productionPartnerId),
     type: "physical",
   });
 

@@ -8,6 +8,7 @@ import {
   getListingImageIds,
   getListingState,
   getShirtTaxonomyId,
+  getShopProductionPartnerId,
   getShopReadinessStateId,
   getShopShippingProfileId,
   getVariationProperties,
@@ -62,7 +63,7 @@ export async function publishEtsyDraft(input: {
 
   const { data: item } = await supabase
     .from("items")
-    .select("id, name, description, base_price_cents")
+    .select("id, name, description, base_price_cents, fulfillment_provider_key")
     .eq("id", itemId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -218,6 +219,25 @@ export async function publishEtsyDraft(input: {
   const properties = await getVariationProperties(config, token.accessToken, taxonomy.data);
   if (!properties.ok) return await rememberFailure(supabase, itemId, connectionId, existingListingId, properties.error);
 
+  let providerName: string | null = null;
+  if (item.fulfillment_provider_key) {
+    const { data: provider } = await supabase
+      .from("connector_registry")
+      .select("display_name")
+      .eq("key", item.fulfillment_provider_key)
+      .maybeSingle();
+    providerName = provider?.display_name ?? null;
+  }
+  const partner = await getShopProductionPartnerId(
+    config,
+    token.accessToken,
+    shopId,
+    providerName
+  );
+  if (!partner.ok) {
+    return await rememberFailure(supabase, itemId, connectionId, existingListingId, partner.error);
+  }
+
   const price = dollarsFromCents(item.base_price_cents);
   const description = item.description?.trim() ?? "";
   const draft = await createOrUpdateDraftListing({
@@ -231,6 +251,7 @@ export async function publishEtsyDraft(input: {
     taxonomyId: taxonomy.data,
     shippingProfileId: shipping.data,
     readinessStateId: readiness.data,
+    productionPartnerId: partner.data,
   });
   if (!draft.ok) {
     return await rememberFailure(supabase, itemId, connectionId, existingListingId, draft.error);
