@@ -76,11 +76,17 @@ export function ChannelStatusCards({
         }),
       });
       const json = (await response.json().catch(() => null)) as {
-        error?: string;
+        error?: unknown;
         warning?: string;
       } | null;
       if (!response.ok) {
-        toast.error(json?.error ?? "Channel action failed.");
+        const message =
+          typeof json?.error === "string"
+            ? json.error
+            : json?.error
+              ? JSON.stringify(json.error)
+              : "Channel action failed.";
+        toast.error(message);
         router.refresh();
         return;
       }

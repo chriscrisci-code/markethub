@@ -43,11 +43,36 @@ function headers(config: EtsyConfig, accessToken: string, json = false) {
   };
 }
 
+function etsyErrorText(body: unknown): string | null {
+  if (typeof body === "string" && body.trim()) return body.trim();
+  if (Array.isArray(body)) {
+    const parts = body
+      .map((item) => etsyErrorText(item))
+      .filter((item): item is string => Boolean(item));
+    return parts.length > 0 ? parts.join(" ") : null;
+  }
+  if (!body || typeof body !== "object") return null;
+
+  const record = body as Record<string, unknown>;
+  if (typeof record.message === "string" && (record.path != null || record.type != null)) {
+    const detail = [record.path, record.type]
+      .filter((part): part is string => typeof part === "string" && part.length > 0)
+      .join(" / ");
+    return detail ? `${detail}: ${record.message}` : record.message;
+  }
+
+  return (
+    etsyErrorText(record.error) ||
+    etsyErrorText(record.errors) ||
+    (typeof record.message === "string" ? record.message : null) ||
+    (typeof record.error_description === "string" ? record.error_description : null)
+  );
+}
+
 async function readError(response: Response) {
   const text = await response.text();
   try {
-    const body = JSON.parse(text) as { error?: string; message?: string };
-    return body.error || body.message || text.slice(0, 400);
+    return etsyErrorText(JSON.parse(text)) || text.slice(0, 400);
   } catch {
     return text.slice(0, 400) || `Etsy returned ${response.status}.`;
   }

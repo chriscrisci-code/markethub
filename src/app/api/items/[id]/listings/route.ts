@@ -140,21 +140,18 @@ export async function POST(
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Channel action failed.";
     if (listing) {
       await supabase
         .from("channel_listings")
         .update({
           sync_status: "sync_error",
+          sync_error: message,
           last_synced_at: new Date().toISOString(),
         })
         .eq("id", listing.id);
     }
 
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Channel action failed.",
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
