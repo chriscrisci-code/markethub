@@ -18,6 +18,7 @@ import {
   uploadListingImage,
   type ResolvedVariation,
 } from "@/lib/etsy/shop-listing";
+import { syncPrintfulColorVariants } from "@/lib/variants/sync-printful";
 
 type PublishResult = {
   ok: boolean;
@@ -47,6 +48,15 @@ function numericListingId(value: string | null | undefined): value is string {
 function attribute(variant: VariantRow, key: "color" | "size") {
   const value = variant.attributes?.[key];
   return typeof value === "string" ? value.trim() : "";
+}
+
+function isSellableVariant(variant: VariantRow) {
+  return Boolean(
+    variant.provider_catalog_variant_id &&
+      variant.sku &&
+      attribute(variant, "color") &&
+      attribute(variant, "size")
+  );
 }
 
 function fail(status: number, error: string, extra: Record<string, unknown> = {}): PublishResult {
@@ -121,9 +131,7 @@ export async function publishEtsyDraft(input: {
 
   if (variantError) return fail(500, variantError.message);
 
-  const mapped = ((variants ?? []) as VariantRow[]).filter(
-    (variant) => variant.provider_catalog_variant_id && variant.sku && attribute(variant, "color") && attribute(variant, "size")
-  );
+  let mapped = ((variants ?? []) as VariantRow[]).filter(isSellableVariant);
 
   const { data: mockups, error: mockupError } = await supabase
     .from("item_mockups")
@@ -132,30 +140,31 @@ export async function publishEtsyDraft(input: {
 
   if (mockupError) return fail(500, mockupError.message);
 
+  const mockupRows = (mockups ?? []) as MockupRow[];
+  const sizeSync = await ensurePrintfulSizes(supabase, item, mockupRows, mapped);
+  mapped = sizeSync.mapped;
+
   const problems: string[] = [];
   if (!item.name || item.name === "Untitled Item") problems.push("Give the item a title.");
   if (!item.description?.trim()) problems.push("Add a description.");
   if (!item.base_price_cents || item.base_price_cents <= 0) {
     problems.push("Set a sale price above zero.");
   }
-  if (mapped.length === 0) {
-    problems.push("No Printful sizes are mapped. Re-save a mockup for each color.");
-  }
-  const mockupRows = (mockups ?? []) as MockupRow[];
+  if (sizeSync.error) problems.push(sizeSync.error);
   const mappedColors = new Set(mapped.map((variant) => attribute(variant, "color").toLowerCase()));
   const unresolved = mockupRows.filter((mockup) => {
     const color = mockup.color_name?.trim().toLowerCase();
     return !color || !mappedColors.has(color);
   });
   if (mockupRows.length === 0) problems.push("Save at least one mockup image.");
-  if (unresolved.length > 0) {
+  if (!sizeSync.error && unresolved.length > 0) {
     const names = unresolved
       .map((mockup) => mockup.color_name?.trim())
       .filter((name): name is string => Boolean(name));
     problems.push(
       names.length > 0
-        ? `Re-save the mockup for ${names.join(", ")} so Printful sizes are mapped.`
-        : "Re-save each mockup. A saved image is missing its color."
+        ? `Printful sizes are still missing for ${names.join(", ")}.`
+        : "A saved image is missing its color."
     );
   }
   if (problems.length > 0) {
@@ -476,6 +485,62 @@ function propertyValue(resolved: ResolvedVariation) {
     ...(resolved.scaleId ? { scale_id: resolved.scaleId } : {}),
     ...(resolved.valueId ? { value_ids: [resolved.valueId] } : {}),
     values: [resolved.value.replace(/[()]/g, "")],
+  };
+}
+
+async function ensurePrintfulSizes(
+  supabase: SupabaseClient,
+  item: { id: string; fulfillment_provider_key?: string | null },
+  mockups: MockupRow[],
+  mapped: VariantRow[]
+): Promise<{ mapped: VariantRow[]; error?: string }> {
+  if (item.fulfillment_provider_key !== "printful") return { mapped };
+
+  const mappedColors = new Set(mapped.map((variant) => attribute(variant, "color").toLowerCase()));
+  const pending = new Map<string, MockupRow>();
+  for (const mockup of mockups) {
+    const color = mockup.color_name?.trim();
+    if (!color || mappedColors.has(color.toLowerCase())) continue;
+    const current = pending.get(color.toLowerCase());
+    if (!current || mockup.created_at > current.created_at) pending.set(color.toLowerCase(), mockup);
+  }
+  if (pending.size === 0) return { mapped };
+
+  const { data: design } = await supabase
+    .from("item_designs")
+    .select("id, provider_product_ref")
+    .eq("item_id", item.id)
+    .maybeSingle();
+  const productRef = design?.provider_product_ref as { id?: string } | null;
+  const catalogProductId = productRef?.id ? String(productRef.id) : "";
+  if (!catalogProductId) {
+    return {
+      mapped,
+      error: "Save the design first so Market Hub knows which Printful product to use.",
+    };
+  }
+
+  const errors: string[] = [];
+  for (const mockup of pending.values()) {
+    const result = await syncPrintfulColorVariants(supabase, {
+      itemId: item.id,
+      mockupId: mockup.id,
+      colorName: mockup.color_name!.trim(),
+      catalogProductId,
+      designId: (design?.id as string | undefined) ?? null,
+    });
+    if (result.error) errors.push(result.error);
+  }
+
+  const { data: variants, error } = await supabase
+    .from("item_variants")
+    .select("id, sku, provider_catalog_variant_id, attributes")
+    .eq("item_id", item.id);
+  if (error) return { mapped, error: error.message };
+
+  return {
+    mapped: ((variants ?? []) as VariantRow[]).filter(isSellableVariant),
+    error: errors.length > 0 ? errors.join(" ") : undefined,
   };
 }
 

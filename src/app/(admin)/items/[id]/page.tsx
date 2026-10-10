@@ -20,6 +20,7 @@ import {
 } from "@/lib/data/queries";
 import { artworkBySide } from "@/lib/domain/artwork-sides";
 import type { SavedMockup } from "@/lib/mockups/saved-client";
+import { sortApparelSizes } from "@/lib/variants/combinations";
 
 export const maxDuration = 60;
 
@@ -97,6 +98,18 @@ export default async function ItemDetailPage({
           ? (providerNameByKey.get(providerKey) ?? providerKey)
           : (item.fulfillment_provider?.display_name ?? null),
         variant_id: mockup.variant_id ?? null,
+        sizes: sortApparelSizes(
+          (item.item_variants ?? [])
+            .filter((variant) => {
+              const color = variant.attributes?.color?.trim().toLowerCase();
+              return (
+                Boolean(variant.sku) &&
+                Boolean(variant.attributes?.size) &&
+                color === (mockup.color_name ?? "").trim().toLowerCase()
+              );
+            })
+            .map((variant) => variant.attributes.size as string)
+        ),
         created_at: mockup.created_at,
         url: await getMockupUrl(mockup.storage_path),
       };

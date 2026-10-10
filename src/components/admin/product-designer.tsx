@@ -385,11 +385,15 @@ export function ProductDesigner({
         sizes: selectedSizes,
       });
       if (result.error || !result.mockup) {
-        toast.error(result.error ?? "Could not save mockup.");
+        toast.error(result.error ?? "Could not create the variant.");
         return;
       }
       setSavedMockups((prev) => [result.mockup!, ...prev]);
-      toast.success(`${color} is now a color for sale.`);
+      const sizeLabel =
+        result.mockup.sizes.length > 0
+          ? ` Sizes: ${result.mockup.sizes.join(", ")}.`
+          : "";
+      toast.success(`${color} is ready to sell.${sizeLabel}`);
     } finally {
       setSavingMockupUrl(null);
     }
@@ -405,7 +409,7 @@ export function ProductDesigner({
         return;
       }
       setSavedMockups((prev) => prev.filter((m) => m.id !== mockupId));
-      toast.success("Removed saved image.");
+      toast.success("Removed variant.");
     } finally {
       setDeletingMockupId(null);
     }
@@ -887,8 +891,8 @@ export function ProductDesigner({
                       }}
                     >
                       {savingMockupUrl === url
-                        ? "Saving…"
-                        : "Save To Mockups"}
+                        ? "Creating…"
+                        : "Create Variant"}
                     </Button>
                   </div>
                 ))}
@@ -902,16 +906,16 @@ export function ProductDesigner({
             <div className="space-y-2 border-t pt-3">
               <div>
                 <h3 className="text-sm font-semibold tracking-tight">
-                  Saved Images
+                  Variants
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Each saved image is a color available for sale. Double-click
-                  for full resolution.
+                  Each variant is one color. Printful sizes are included
+                  automatically. Double-click the image for full resolution.
                 </p>
               </div>
               {savedMockups.length === 0 ? (
                 <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-                  No saved mockups yet.
+                  No variants yet.
                 </div>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -921,7 +925,7 @@ export function ProductDesigner({
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={mockup.url}
-                          alt={mockup.label ?? "Saved mockup"}
+                          alt={mockup.color_name ?? mockup.label ?? "Variant"}
                           title="Double-click for full resolution"
                           className="w-full cursor-zoom-in rounded-lg border bg-muted/20 object-contain"
                           onDoubleClick={() => {
@@ -943,6 +947,12 @@ export function ProductDesigner({
                             Fulfillment:{" "}
                           </span>
                           {mockup.fulfillment_provider_name ?? "Not set"}
+                        </p>
+                        <p>
+                          <span className="text-muted-foreground">Sizes: </span>
+                          {mockup.sizes.length > 0
+                            ? mockup.sizes.join(", ")
+                            : "Not mapped yet"}
                         </p>
                       </div>
                       <div className="flex items-center justify-end gap-2">

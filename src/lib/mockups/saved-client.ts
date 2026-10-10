@@ -14,6 +14,7 @@ export type SavedMockup = {
   fulfillment_provider_key: string | null;
   fulfillment_provider_name: string | null;
   variant_id: string | null;
+  sizes: string[];
   created_at: string;
   url: string | null;
 };
@@ -62,11 +63,12 @@ export async function saveMockupViaApi(
     const json = await parseJsonResponse<{
       mockup?: SavedMockup;
       error?: string;
+      variantSync?: { error?: string };
     }>(response);
 
     if (!response.ok) {
       return {
-        error: json?.error ?? `Could not save mockup (${response.status}).`,
+        error: json?.error ?? json?.variantSync?.error ?? `Could not create the variant (${response.status}).`,
       };
     }
 

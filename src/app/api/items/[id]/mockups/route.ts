@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/api/auth";
+import { sortApparelSizes } from "@/lib/variants/combinations";
 
 type SaveMockupBody = {
   imageUrl: string;
@@ -40,7 +41,8 @@ async function providerNames(
 function toSavedMockup(
   row: MockupRow,
   url: string | null,
-  names: Map<string, string>
+  names: Map<string, string>,
+  sizes: string[]
 ) {
   const providerKey = row.fulfillment_provider_key;
   return {
@@ -55,9 +57,37 @@ function toSavedMockup(
       ? (names.get(providerKey) ?? providerKey)
       : null,
     variant_id: row.variant_id,
+    sizes,
     created_at: row.created_at,
     url,
   };
+}
+
+async function sizesByColor(
+  supabase: NonNullable<Awaited<ReturnType<typeof requireApiUser>>["supabase"]>,
+  itemId: string
+) {
+  const { data } = await supabase
+    .from("item_variants")
+    .select("sku, attributes")
+    .eq("item_id", itemId);
+
+  const grouped = new Map<string, string[]>();
+  for (const row of data ?? []) {
+    if (!row.sku) continue;
+    const attributes = row.attributes as { color?: string; size?: string } | null;
+    const color = attributes?.color?.trim();
+    const size = attributes?.size?.trim();
+    if (!color || !size) continue;
+    const key = color.toLowerCase();
+    const sizes = grouped.get(key) ?? [];
+    if (!sizes.includes(size)) sizes.push(size);
+    grouped.set(key, sizes);
+  }
+  for (const [key, sizes] of grouped) {
+    grouped.set(key, sortApparelSizes(sizes));
+  }
+  return grouped;
 }
 
 function extensionFromContentType(contentType: string | null): string {
@@ -105,12 +135,14 @@ export async function GET(
     supabase,
     typedRows.map((row) => row.fulfillment_provider_key ?? "")
   );
+  const sizes = await sizesByColor(supabase, itemId);
   const mockups = await Promise.all(
     typedRows.map(async (row) => {
       const { data: signed } = await supabase.storage
         .from("mockups")
         .createSignedUrl(row.storage_path, 60 * 60 * 24);
-      return toSavedMockup(row, signed?.signedUrl ?? null, names);
+      const color = row.color_name?.trim().toLowerCase() ?? "";
+      return toSavedMockup(row, signed?.signedUrl ?? null, names, sizes.get(color) ?? []);
     })
   );
 
@@ -161,6 +193,25 @@ export async function POST(
   }
 
   const providerKey = (item.fulfillment_provider_key as string | null) ?? null;
+
+  let catalogProductId = "";
+  let designId: string | null = null;
+  if (providerKey === "printful") {
+    const { data: design } = await supabase
+      .from("item_designs")
+      .select("id, provider_product_ref")
+      .eq("item_id", itemId)
+      .maybeSingle();
+    const productRef = design?.provider_product_ref as { id?: string } | null;
+    catalogProductId = productRef?.id ? String(productRef.id) : "";
+    designId = (design?.id as string | undefined) ?? null;
+    if (!catalogProductId) {
+      return NextResponse.json(
+        { error: "Save the design first so Market Hub knows which Printful product to use." },
+        { status: 400 }
+      );
+    }
+  }
 
   let imageResponse: Response;
   try {
@@ -294,31 +345,41 @@ export async function POST(
     .from("mockups")
     .createSignedUrl(storagePath, 60 * 60 * 24);
 
-  let variantSync: { mapped: number; error?: string } | null = null;
   if (providerKey === "printful") {
-    const { data: design } = await supabase
-      .from("item_designs")
-      .select("id, provider_product_ref")
-      .eq("item_id", itemId)
-      .maybeSingle();
-    const productRef = design?.provider_product_ref as { id?: string } | null;
-    const catalogProductId = productRef?.id ? String(productRef.id) : "";
-    if (catalogProductId) {
-      const { syncPrintfulColorVariants } = await import(
-        "@/lib/variants/sync-printful"
+    const { syncPrintfulColorVariants } = await import(
+      "@/lib/variants/sync-printful"
+    );
+    const variantSync = await syncPrintfulColorVariants(supabase, {
+      itemId,
+      mockupId: (row as MockupRow).id,
+      colorName: color,
+      catalogProductId,
+      designId,
+    });
+    if (variantSync.error || variantSync.mapped === 0) {
+      await supabase.from("item_mockups").delete().eq("id", (row as MockupRow).id);
+      await supabase.storage.from("mockups").remove([storagePath]);
+      if (createdVariant && variantId) {
+        await supabase.from("item_variants").delete().eq("id", variantId);
+      }
+      return NextResponse.json(
+        {
+          error:
+            variantSync.error ??
+            `Printful has no in-stock sizes for ${color}.`,
+        },
+        { status: 502 }
       );
-      variantSync = await syncPrintfulColorVariants(supabase, {
-        itemId,
-        mockupId: (row as MockupRow).id,
-        colorName: color,
-        catalogProductId,
-        designId: (design?.id as string | undefined) ?? null,
-      });
     }
   }
 
+  const sizeNames = await sizesByColor(supabase, itemId);
   return NextResponse.json({
-    mockup: toSavedMockup(row as MockupRow, signed?.signedUrl ?? null, names),
-    variantSync,
+    mockup: toSavedMockup(
+      row as MockupRow,
+      signed?.signedUrl ?? null,
+      names,
+      sizeNames.get(color.toLowerCase()) ?? []
+    ),
   });
 }
