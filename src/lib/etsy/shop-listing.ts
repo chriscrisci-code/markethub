@@ -481,15 +481,56 @@ export async function updateVariationImages(input: {
   return { ok: true as const, data: true };
 }
 
+type ShopListingSummary = {
+  listing_id?: number;
+  state?: string;
+  url?: string;
+};
+
+/** Drafts are not returned by GET /listings/{id}. Find this id in the shop's own lists. */
+async function findShopListingByState(
+  config: EtsyConfig,
+  accessToken: string,
+  shopId: string,
+  listingId: string,
+  state: "draft" | "active" | "inactive"
+) {
+  const limit = 100;
+  for (let offset = 0; offset < 1000; offset += limit) {
+    const page = await etsyGet<{ results?: ShopListingSummary[] }>(
+      config,
+      accessToken,
+      `/shops/${shopId}/listings?state=${state}&limit=${limit}&offset=${offset}`
+    );
+    if (!page.ok) return page;
+    const results = page.data.results ?? [];
+    const match = results.find((row) => String(row.listing_id ?? "") === listingId);
+    if (match) return { ok: true as const, data: match };
+    if (results.length < limit) return { ok: true as const, data: null };
+  }
+  return { ok: true as const, data: null };
+}
+
 export async function getListingState(
   config: EtsyConfig,
   accessToken: string,
   shopId: string,
   listingId: string
 ) {
-  return etsyGet<{ listing_id?: number; state?: string; url?: string }>(
-    config,
-    accessToken,
-    `/shops/${shopId}/listings/${listingId}`
-  );
+  for (const state of ["draft", "active", "inactive"] as const) {
+    const found = await findShopListingByState(
+      config,
+      accessToken,
+      shopId,
+      listingId,
+      state
+    );
+    if (!found.ok) return found;
+    if (found.data) return { ok: true as const, data: found.data };
+  }
+  return {
+    ok: false as const,
+    status: 404,
+    error: `Listing ${listingId} was not in this shop's draft, active, or inactive listings.`,
+  };
 }
