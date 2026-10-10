@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { getFulfillmentConnector } from "@/lib/connectors/fulfillment/registry";
+import { persistItemDesign } from "@/lib/design/persist";
 import {
   artworkBySide,
   normalizePrintableAreas,
@@ -39,17 +40,9 @@ export async function saveItemDesign(
 ) {
   const { supabase } = await requireUser();
 
-  const { error } = await supabase.from("item_designs").upsert(
-    {
-      item_id: itemId,
-      provider_product_ref: payload.providerProductRef,
-      printable_areas: payload.printableAreas,
-    },
-    { onConflict: "item_id" }
-  );
-
-  if (error) {
-    return { error: error.message };
+  const saved = await persistItemDesign(supabase, itemId, payload);
+  if ("error" in saved) {
+    return { error: saved.error };
   }
 
   revalidatePath(`/items/${itemId}`);

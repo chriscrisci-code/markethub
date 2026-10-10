@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/api/auth";
+import { persistItemDesign } from "@/lib/design/persist";
 import type { PrintableAreasMap, ProviderProductRef } from "@/lib/types/database";
 
 type SaveDesignBody = {
@@ -44,18 +45,22 @@ export async function POST(
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  const { error: designError } = await supabase.from("item_designs").upsert(
-    {
-      item_id: itemId,
-      provider_product_ref: body.providerProductRef,
-      printable_areas: body.printableAreas,
-    },
-    { onConflict: "item_id" }
-  );
+  const saved = await persistItemDesign(supabase, itemId, {
+    providerProductRef: body.providerProductRef,
+    printableAreas: body.printableAreas,
+  });
 
-  if (designError) {
-    return NextResponse.json({ error: designError.message }, { status: 500 });
+  if ("error" in saved) {
+    return NextResponse.json(
+      { error: saved.error },
+      { status: saved.status ?? 500 }
+    );
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({
+    success: true,
+    itemId: saved.itemId,
+    designId: saved.designId,
+    productId: saved.productId,
+  });
 }

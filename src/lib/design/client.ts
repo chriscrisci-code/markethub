@@ -16,7 +16,7 @@ export async function saveItemDesignViaApi(
     printableAreas: PrintableAreasMap;
     variants: Array<{ color: string; size: string }>;
   }
-): Promise<{ success?: true; error?: string }> {
+): Promise<{ success?: true; productId?: string; error?: string }> {
   try {
     const response = await apiFetch(`/api/items/${itemId}/design`, {
       method: "POST",
@@ -27,6 +27,8 @@ export async function saveItemDesignViaApi(
     const json = await parseJsonResponse<{
       success?: boolean;
       error?: string;
+      productId?: string;
+      itemId?: string;
     }>(response);
 
     if (response.status === 401) {
@@ -35,13 +37,19 @@ export async function saveItemDesignViaApi(
       };
     }
 
-    if (!response.ok) {
+    if (!response.ok || !json?.success || !json.productId) {
       return {
-        error: json?.error ?? `Save failed (${response.status}).`,
+        error:
+          json?.error ??
+          `Save failed (${response.status}). The design was not stored.`,
       };
     }
 
-    return { success: true };
+    if (json.itemId && json.itemId !== itemId) {
+      return { error: "Design was saved for a different item." };
+    }
+
+    return { success: true, productId: json.productId };
   } catch (error) {
     return {
       error: networkErrorMessage(error, "Could not save design."),
