@@ -1,3 +1,4 @@
+import { etsyDraftEditorUrl } from "@/lib/etsy/shop-listing";
 import {
   etsyConnector,
   marketHubStoreConnector,
@@ -53,7 +54,10 @@ export function getChannelStatuses(
       platformName: platform?.display_name ?? storefront.connector_key,
       syncStatus,
       publicationState: listing?.publication_state ?? null,
-      listingUrl: listing?.listing_url ?? null,
+      listingUrl:
+        hasEtsyDraft && listing?.external_listing_id
+          ? etsyDraftEditorUrl(listing.external_listing_id)
+          : (listing?.listing_url ?? null),
       syncError: listing?.sync_error ?? null,
       canPublish: hasEtsyDraft
         ? false

@@ -2,6 +2,11 @@ import type { EtsyConfig } from "@/lib/etsy/oauth";
 
 const ETSY_API = "https://openapi.etsy.com/v3/application";
 
+/** Public /listing/ pages 404 while a listing is still a draft. */
+export function etsyDraftEditorUrl(listingId: string) {
+  return `https://www.etsy.com/your/shops/me/listing-editor/edit/${listingId}`;
+}
+
 export type EtsyCallResult<T> =
   | { ok: true; data: T }
   | { ok: false; status: number; error: string };
@@ -356,9 +361,7 @@ export async function createOrUpdateDraftListing(input: {
     ok: true as const,
     data: {
       listingId: String(data.listing_id),
-      listingUrl:
-        data.url ||
-        `https://www.etsy.com/your/shops/me/listing-editor/edit/${data.listing_id}`,
+      listingUrl: etsyDraftEditorUrl(String(data.listing_id)),
     },
   };
 }

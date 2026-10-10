@@ -5,6 +5,7 @@ import { etsyConfig, getValidEtsyAccessToken } from "@/lib/etsy/oauth";
 import {
   createOrUpdateDraftListing,
   dollarsFromCents,
+  etsyDraftEditorUrl,
   getListingImageIds,
   getListingState,
   getShirtTaxonomyId,
@@ -423,10 +424,7 @@ export async function publishEtsyDraft(input: {
     );
   }
 
-  const listingUrl =
-    confirmed.data.url ||
-    draft.data.listingUrl ||
-    `https://www.etsy.com/your/shops/me/listing-editor/edit/${listingId}`;
+  const listingUrl = etsyDraftEditorUrl(listingId);
   const publicationState = warnings.length > 0 ? "partially_synchronized" : "draft_ready";
 
   const { data: savedListing } = await supabase
