@@ -324,7 +324,7 @@ export async function createOrUpdateDraftListing(input: {
     title: input.title.slice(0, 140),
     description: input.description,
     price: input.price.toFixed(2),
-    who_made: "someone_else",
+    who_made: "i_did",
     when_made: "made_to_order",
     is_supply: "false",
     taxonomy_id: String(input.taxonomyId),
