@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "src/lib/variants/combinations.test.ts"]
+  "exclude": ["node_modules", "src/lib/variants/combinations.test.ts", "src/lib/etsy/variation-matrix.test.ts"]
 }

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { completeVariationMatrix } from "@/lib/etsy/variation-matrix";
 import { createServiceClient } from "@/lib/supabase/service";
 import { decryptJson, isEncryptedPayload, type EtsyTokenBundle } from "@/lib/etsy/tokens";
 import { etsyConfig, getValidEtsyAccessToken } from "@/lib/etsy/oauth";
@@ -357,7 +358,11 @@ export async function publishEtsyDraft(input: {
     config,
     accessToken: token.accessToken,
     listingId,
-    products: products.map((entry) => entry.product),
+    products: completeVariationMatrix(
+      products.map((entry) => entry.product),
+      price,
+      readiness.data
+    ),
     skuOnProperty: [properties.data.color.property_id, properties.data.size.property_id],
   });
   if (!inventory.ok) {
