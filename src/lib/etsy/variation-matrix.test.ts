@@ -34,6 +34,7 @@ const teal5xl = completed.find(
 
 assert.equal(completed.length, 4);
 assert.equal(teal5xl?.offerings[0]?.is_enabled, false);
+assert.equal(teal5xl?.offerings[0]?.quantity, 999);
 assert.equal(completed.filter((entry) => entry.offerings[0]?.is_enabled).length, 3);
 
 console.log("etsy variation matrix checks passed");

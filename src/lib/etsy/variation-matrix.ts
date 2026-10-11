@@ -76,7 +76,7 @@ export function completeVariationMatrix(
         offerings: [
           {
             price,
-            quantity: 1,
+            quantity: 999,
             is_enabled: false,
             readiness_state_id: readinessStateId,
           },
