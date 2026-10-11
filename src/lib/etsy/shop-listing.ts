@@ -199,14 +199,50 @@ const SIZE_ALIASES: Record<string, string> = {
   "2xl": "xx large",
   "3xl": "xxx large",
   "4xl": "xxxx large",
+  "5xl": "xxxxx large",
 };
 
+const KIDS_SIZE = /kid|infant|toddler|baby|youth|child|newborn/;
+const ADULT_LETTERS = ["xs", "s", "m", "l", "xl", "2xl", "3xl", "4xl", "5xl"];
+
+function isKidsLabel(value: string) {
+  return KIDS_SIZE.test(value.toLowerCase());
+}
+
+function sizeKey(value: string) {
+  return normalizeName(value).replace(/\s/g, "");
+}
+
+function namesMatch(candidate: string, wanted: string) {
+  const alias = SIZE_ALIASES[wanted] ?? wanted;
+  return candidate === wanted || candidate === alias;
+}
+
+type SizeScale = NonNullable<TaxonomyProperty["scales"]>[number];
+
+/** Adult letter sizes live on a different Etsy scale than kids' letter sizes. */
+function adultSizeScale(property: TaxonomyProperty): SizeScale | null {
+  const ranked = (property.scales ?? [])
+    .map((scale) => {
+      const label = scale.display_name ?? "";
+      if (isKidsLabel(label)) return { scale, score: -1 };
+      const names = new Set((scale.values ?? []).map((value) => sizeKey(value.name)));
+      let score = /alpha|letter/.test(label.toLowerCase()) ? 20 : 0;
+      for (const size of ADULT_LETTERS) {
+        if (names.has(size)) score += 1;
+      }
+      return { scale, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return ranked[0]?.scale ?? null;
+}
+
 function matchValue(name: string, values: TaxonomyValue[]) {
-  const wanted = normalizeName(name);
-  const alias = SIZE_ALIASES[wanted.replace(/\s/g, "")] ?? wanted;
+  const wanted = sizeKey(name);
   return values.find((value) => {
-    const candidate = normalizeName(value.name);
-    return candidate === wanted || candidate === alias;
+    if (isKidsLabel(value.name)) return false;
+    return namesMatch(sizeKey(value.name), wanted);
   });
 }
 
@@ -243,10 +279,15 @@ export function resolveVariationValue(
   property: TaxonomyProperty,
   name: string
 ): ResolvedVariation {
-  const values = [
-    ...(property.possible_values ?? []),
-    ...(property.scales ?? []).flatMap((scale) => scale.values ?? []),
-  ];
+  const adult = adultSizeScale(property);
+  const values = adult?.values?.length
+    ? adult.values
+    : [
+        ...(property.possible_values ?? []),
+        ...(property.scales ?? [])
+          .filter((scale) => !isKidsLabel(scale.display_name ?? ""))
+          .flatMap((scale) => scale.values ?? []),
+      ];
   const matched = matchValue(name, values);
   if (!matched) {
     return {
@@ -255,9 +296,13 @@ export function resolveVariationValue(
       value: name,
     };
   }
-  const scale = property.scales?.find((entry) =>
-    entry.values?.some((value) => value.value_id === matched.value_id)
-  );
+  const scale =
+    adult ??
+    property.scales?.find(
+      (entry) =>
+        !isKidsLabel(entry.display_name ?? "") &&
+        entry.values?.some((value) => value.value_id === matched.value_id)
+    );
   return {
     propertyId: property.property_id,
     propertyName: property.display_name || property.name,
