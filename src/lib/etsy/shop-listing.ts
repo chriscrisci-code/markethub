@@ -582,3 +582,22 @@ export async function getListingState(
     error: `Listing ${listingId} was not in this shop's draft, active, or inactive listings.`,
   };
 }
+
+/** Removes a draft or inactive listing. A 404 means Etsy already does not have it. */
+export async function deleteEtsyListing(
+  config: EtsyConfig,
+  accessToken: string,
+  listingId: string
+) {
+  const response = await fetch(`${ETSY_API}/listings/${listingId}`, {
+    method: "DELETE",
+    headers: headers(config, accessToken),
+  });
+  if (response.status === 404 || response.status === 204) {
+    return { ok: true as const, data: true };
+  }
+  if (!response.ok) {
+    return { ok: false as const, status: response.status, error: await readError(response) };
+  }
+  return { ok: true as const, data: true };
+}

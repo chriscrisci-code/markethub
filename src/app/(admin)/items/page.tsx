@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { createItem } from "@/lib/actions/items";
+import { DeleteItemButton } from "@/components/admin/delete-item-button";
 import { getArtworkUrl, getItems } from "@/lib/data/queries";
 import { formatCents, formatPublishedTo } from "@/lib/domain/format";
 
@@ -86,6 +87,7 @@ export default async function ItemsPage() {
                 <TableHead>Fulfillment</TableHead>
                 <TableHead>Published To</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="w-24"> </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -117,6 +119,9 @@ export default async function ItemsPage() {
                     <Badge variant={item.status === "active" ? "default" : "secondary"}>
                       {item.status}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <DeleteItemButton itemId={item.id} itemName={item.name} />
                   </TableCell>
                 </TableRow>
               ))}

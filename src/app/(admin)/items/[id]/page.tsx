@@ -8,6 +8,7 @@ import {
   ItemProductDesignerCard,
 } from "@/components/admin/item-artwork-shell";
 import { ItemForm } from "@/components/admin/item-form";
+import { DeleteItemButton } from "@/components/admin/delete-item-button";
 import { getFulfillmentConnector } from "@/lib/connectors/fulfillment/registry";
 import { getChannelStatuses } from "@/lib/connectors/marketplace/registry";
 import {
@@ -130,9 +131,12 @@ export default async function ItemDetailPage({
       }}
     >
       <div className="space-y-8">
-        <div>
-          <p className="text-sm text-muted-foreground">Item</p>
-          <h1 className="text-3xl font-semibold tracking-tight">{item.name}</h1>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm text-muted-foreground">Item</p>
+            <h1 className="text-3xl font-semibold tracking-tight">{item.name}</h1>
+          </div>
+          <DeleteItemButton itemId={item.id} itemName={item.name} />
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
