@@ -17,7 +17,7 @@ export function DeleteItemButton({
 
   async function handleDelete() {
     const confirmed = window.confirm(
-      `Delete “${itemName}” from Market Hub? Its Etsy draft is removed too. A listing that is already live on Etsy is left alone.`
+      `Delete “${itemName}” from Market Hub only? The listing stays on your storefronts. Remove it on Etsy yourself if you want it gone there.`
     );
     if (!confirmed || pending) return;
 

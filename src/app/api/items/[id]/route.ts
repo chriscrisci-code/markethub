@@ -87,63 +87,6 @@ export async function DELETE(
     return NextResponse.json({ error: "Item not found." }, { status: 404 });
   }
 
-  const { data: listings, error: listingsError } = await supabase
-    .from("channel_listings")
-    .select("connector_key, connection_id, external_listing_id")
-    .eq("item_id", itemId);
-
-  if (listingsError) {
-    return NextResponse.json({ error: listingsError.message }, { status: 500 });
-  }
-
-  for (const listing of listings ?? []) {
-    if (listing.connector_key !== "etsy") continue;
-    const listingId = listing.external_listing_id as string | null;
-    if (!listingId || !/^\d+$/.test(listingId) || !listing.connection_id) continue;
-
-    const { data: connection } = await supabase
-      .from("connector_connections")
-      .select("external_account_id")
-      .eq("id", listing.connection_id)
-      .eq("user_id", user.id)
-      .maybeSingle();
-    const shopId = connection?.external_account_id as string | null;
-    if (!shopId) continue;
-
-    const { etsyConfig, getValidEtsyAccessToken } = await import("@/lib/etsy/oauth");
-    const { deleteEtsyListing, getListingState } = await import("@/lib/etsy/shop-listing");
-    const config = etsyConfig();
-    if ("error" in config) {
-      return NextResponse.json({ error: "Etsy is not configured on the server." }, { status: 500 });
-    }
-    const token = await getValidEtsyAccessToken(listing.connection_id, user.id);
-    if ("error" in token) {
-      return NextResponse.json({ error: token.error }, { status: 401 });
-    }
-
-    const state = await getListingState(config, token.accessToken, shopId, listingId);
-    if (state.ok && state.data.state === "active") {
-      return NextResponse.json(
-        {
-          error:
-            "This item is live on Etsy. Market Hub left it in place. Take it down in Etsy before deleting it here.",
-        },
-        { status: 409 }
-      );
-    }
-    if (!state.ok && state.status !== 404) {
-      return NextResponse.json({ error: state.error }, { status: 502 });
-    }
-
-    const removed = await deleteEtsyListing(config, token.accessToken, listingId);
-    if (!removed.ok) {
-      return NextResponse.json(
-        { error: `Etsy did not delete listing ${listingId}. ${removed.error}` },
-        { status: 502 }
-      );
-    }
-  }
-
   const [{ data: artwork }, { data: mockups }] = await Promise.all([
     supabase.from("item_artwork").select("storage_path").eq("item_id", itemId),
     supabase.from("item_mockups").select("storage_path").eq("item_id", itemId),
