@@ -61,6 +61,14 @@ function isSellableVariant(variant: VariantRow) {
   );
 }
 
+function currentVariantColors(mockups: MockupRow[]) {
+  return new Set(
+    mockups
+      .map((mockup) => mockup.color_name?.trim().toLowerCase())
+      .filter((color): color is string => Boolean(color))
+  );
+}
+
 function fail(status: number, error: string, extra: Record<string, unknown> = {}): PublishResult {
   return { ok: false, status, body: { error, ...extra } };
 }
@@ -144,7 +152,9 @@ export async function publishEtsyDraft(input: {
 
   const mockupRows = (mockups ?? []) as MockupRow[];
   const sizeSync = await ensurePrintfulSizes(supabase, item, mockupRows, mapped);
-  mapped = sizeSync.mapped;
+  mapped = sizeSync.mapped.filter((variant) =>
+    currentVariantColors(mockupRows).has(attribute(variant, "color").toLowerCase())
+  );
 
   const problems: string[] = [];
   if (!item.name || item.name === "Untitled Item") problems.push("Give the item a title.");

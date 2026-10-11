@@ -25,7 +25,7 @@ export async function DELETE(
 
   const { data: mockup, error: fetchError } = await supabase
     .from("item_mockups")
-    .select("id, storage_path, variant_id")
+    .select("id, storage_path, variant_id, color_name")
     .eq("id", mockupId)
     .eq("item_id", itemId)
     .maybeSingle();
@@ -60,6 +60,32 @@ export async function DELETE(
 
     if ((count ?? 0) === 0) {
       await supabase.from("item_variants").delete().eq("id", variantId);
+    }
+  }
+
+  const removedColor = (mockup.color_name as string | null)?.trim().toLowerCase();
+  if (removedColor) {
+    const { data: remaining } = await supabase
+      .from("item_mockups")
+      .select("color_name")
+      .eq("item_id", itemId);
+    const colorStillSaved = (remaining ?? []).some(
+      (row) => (row.color_name as string | null)?.trim().toLowerCase() === removedColor
+    );
+    if (!colorStillSaved) {
+      const { data: variants } = await supabase
+        .from("item_variants")
+        .select("id, attributes")
+        .eq("item_id", itemId);
+      const staleIds = (variants ?? [])
+        .filter((variant) => {
+          const color = (variant.attributes as { color?: string } | null)?.color;
+          return color?.trim().toLowerCase() === removedColor;
+        })
+        .map((variant) => variant.id as string);
+      if (staleIds.length > 0) {
+        await supabase.from("item_variants").delete().in("id", staleIds);
+      }
     }
   }
 
