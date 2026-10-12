@@ -5,7 +5,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   useTransition,
 } from "react";
@@ -102,9 +101,7 @@ export function ProductDesigner({
   initialSavedMockups?: SavedMockup[];
 }) {
   const [isPending, startTransition] = useTransition();
-  const [isSaving, setIsSaving] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
-  const isSavingRef = useRef(false);
   const [selectedProductId, setSelectedProductId] = useState(
     initialDesign?.provider_product_ref?.id ?? products[0]?.id ?? ""
   );
@@ -371,6 +368,24 @@ export function ProductDesigner({
     setSavedMockups(initialSavedMockups);
   }, [initialSavedMockups]);
 
+  async function saveCurrentDesign(): Promise<{ error?: string }> {
+    const productRef = buildProductRef();
+    const areas = buildPrintableAreasMap();
+    if (!productRef || !areas.front) {
+      return { error: "Choose a product first." };
+    }
+    const variantPairs = selectedColors.flatMap((color) =>
+      selectedSizes.map((size) => ({ color, size }))
+    );
+    const result = await saveItemDesignViaApi(itemId, {
+      providerProductRef: productRef,
+      printableAreas: areas,
+      variants: variantPairs,
+    });
+    if (result.error) return { error: result.error };
+    return {};
+  }
+
   async function handleSaveMockup(url: string) {
     const color = selectedColors[0]?.trim();
     if (!color) {
@@ -380,6 +395,11 @@ export function ProductDesigner({
     if (savingMockupUrl) return;
     setSavingMockupUrl(url);
     try {
+      const saved = await saveCurrentDesign();
+      if (saved.error) {
+        toast.error(saved.error);
+        return;
+      }
       const result = await saveMockupViaApi(itemId, url, {
         color,
         sizes: selectedSizes,
@@ -524,59 +544,15 @@ export function ProductDesigner({
     };
   }
 
-  async function handleSaveDesign() {
-    const productRef = buildProductRef();
-    const areas = buildPrintableAreasMap();
-    if (!productRef || !areas.front) {
-      toast.error("Choose a product first.");
-      return;
-    }
-    if (isSavingRef.current) return;
-
-    isSavingRef.current = true;
-    setIsSaving(true);
-    try {
-      const variantPairs = selectedColors.flatMap((color) =>
-        selectedSizes.map((size) => ({ color, size }))
-      );
-      const result = await saveItemDesignViaApi(itemId, {
-        providerProductRef: productRef,
-        printableAreas: areas,
-        variants: variantPairs,
-      });
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
-
-      setValidation({ status: "idle" });
-      toast.success("Design saved.");
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not save design."
-      );
-    } finally {
-      isSavingRef.current = false;
-      setIsSaving(false);
-    }
-  }
-
   async function handleValidate() {
-    if (isValidating || isSaving) return;
+    if (isValidating) return;
 
     setIsValidating(true);
     try {
       const productRef = buildProductRef();
       const areas = buildPrintableAreasMap();
       if (productRef && areas.front) {
-        const variantPairs = selectedColors.flatMap((color) =>
-          selectedSizes.map((size) => ({ color, size }))
-        );
-        const saved = await saveItemDesignViaApi(itemId, {
-          providerProductRef: productRef,
-          printableAreas: areas,
-          variants: variantPairs,
-        });
+        const saved = await saveCurrentDesign();
         if (saved.error) {
           toast.error(saved.error);
           return;
@@ -1083,17 +1059,8 @@ export function ProductDesigner({
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
-          disabled={isSaving || isValidating}
-          onClick={() => {
-            void handleSaveDesign();
-          }}
-        >
-          {isSaving ? "Saving…" : "Save Design"}
-        </Button>
-        <Button
-          type="button"
           variant="outline"
-          disabled={isSaving || isValidating || !artworkUrls[activeSide]}
+          disabled={isValidating || !artworkUrls[activeSide]}
           onClick={() => {
             void handleValidate();
           }}
