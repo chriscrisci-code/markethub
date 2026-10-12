@@ -420,7 +420,8 @@ export async function publishEtsyDraft(input: {
   }
 
   const confirmed = await getListingState(config, token.accessToken, shopId, listingId);
-  if (!confirmed.ok) {
+  const savedState = confirmed.ok ? confirmed.data.state : draft.data.state;
+  if (!confirmed.ok && confirmed.status !== 404) {
     return await rememberFailure(
       supabase,
       itemId,
@@ -429,7 +430,7 @@ export async function publishEtsyDraft(input: {
       `Etsy draft ${listingId} was saved, but Market Hub could not confirm it. ${confirmed.error}`
     );
   }
-  if (confirmed.data.state === "active") {
+  if (savedState === "active") {
     return await rememberFailure(
       supabase,
       itemId,

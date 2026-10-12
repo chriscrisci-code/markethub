@@ -398,7 +398,11 @@ export async function createOrUpdateDraftListing(input: {
   if (!response.ok) {
     return { ok: false as const, status: response.status, error: await readError(response) };
   }
-  const data = (await response.json()) as { listing_id?: number; url?: string };
+  const data = (await response.json()) as {
+    listing_id?: number;
+    url?: string;
+    state?: string;
+  };
   if (!data.listing_id) {
     return { ok: false as const, status: 502, error: "Etsy did not return a listing id." };
   }
@@ -407,6 +411,7 @@ export async function createOrUpdateDraftListing(input: {
     data: {
       listingId: String(data.listing_id),
       listingUrl: etsyDraftEditorUrl(String(data.listing_id)),
+      state: typeof data.state === "string" && data.state ? data.state : "draft",
     },
   };
 }
@@ -541,14 +546,14 @@ async function findShopListingByState(
   accessToken: string,
   shopId: string,
   listingId: string,
-  state: "draft" | "active" | "inactive"
+  state: string
 ) {
   const limit = 100;
   for (let offset = 0; offset < 1000; offset += limit) {
     const page = await etsyGet<{ results?: ShopListingSummary[] }>(
       config,
       accessToken,
-      `/shops/${shopId}/listings?state=${state}&limit=${limit}&offset=${offset}`
+      `/shops/${shopId}/listings?state=${encodeURIComponent(state)}&sort_on=updated&sort_order=desc&limit=${limit}&offset=${offset}`
     );
     if (!page.ok) return page;
     const results = page.data.results ?? [];
@@ -565,7 +570,7 @@ export async function getListingState(
   shopId: string,
   listingId: string
 ) {
-  for (const state of ["draft", "active", "inactive"] as const) {
+  for (const state of ["draft", "edit", "active", "inactive", "sold_out", "expired"]) {
     const found = await findShopListingByState(
       config,
       accessToken,
@@ -573,7 +578,10 @@ export async function getListingState(
       listingId,
       state
     );
-    if (!found.ok) return found;
+    if (!found.ok) {
+      if (found.status === 400) continue;
+      return found;
+    }
     if (found.data) return { ok: true as const, data: found.data };
   }
   return {
