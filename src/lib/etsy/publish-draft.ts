@@ -343,7 +343,7 @@ export async function publishEtsyDraft(input: {
     uploaded.set((mockup.color_name ?? "").toLowerCase(), image.data);
   }
 
-  const products = mapped.map((variant) => {
+  const resolvedProducts = mapped.map((variant) => {
     const color = resolveVariationValue(properties.data.color, attribute(variant, "color"));
     const size = resolveVariationValue(properties.data.size, attribute(variant, "size"));
     return {
@@ -364,6 +364,32 @@ export async function publishEtsyDraft(input: {
       },
     };
   });
+  const warnings: string[] = [];
+  const skippedSizes = [
+    ...new Set(
+      resolvedProducts
+        .filter((entry) => !entry.size.scaleId || !entry.size.valueId)
+        .map((entry) => attribute(entry.variant, "size"))
+        .filter(Boolean)
+    ),
+  ];
+  const products = resolvedProducts.filter(
+    (entry) => entry.size.scaleId && entry.size.valueId
+  );
+  if (products.length === 0) {
+    return await rememberFailure(
+      supabase,
+      itemId,
+      connectionId,
+      listingId,
+      `Etsy draft ${listingId} was saved, but Market Hub did not attach sizes. No Printful size matched an adult Etsy size, so the kids size list was not used.`
+    );
+  }
+  if (skippedSizes.length > 0) {
+    warnings.push(
+      `Left off sizes that Etsy only offers on the kids list: ${skippedSizes.join(", ")}.`
+    );
+  }
 
   const inventory = await updateListingInventory({
     config,
@@ -387,7 +413,6 @@ export async function publishEtsyDraft(input: {
   }
 
   const variationImages: Array<{ property_id: number; value_id: number; image_id: number }> = [];
-  const warnings: string[] = [];
   for (const entry of products) {
     const imageId = uploaded.get(attribute(entry.variant, "color").toLowerCase());
     const returned = inventory.data.find((product) => product.sku === entry.variant.sku);
@@ -499,7 +524,7 @@ function propertyValue(resolved: ResolvedVariation) {
     property_name: resolved.propertyName,
     ...(resolved.scaleId ? { scale_id: resolved.scaleId } : {}),
     ...(resolved.valueId ? { value_ids: [resolved.valueId] } : {}),
-    values: [resolved.value.replace(/[()]/g, "")],
+    values: [resolved.valueId ? resolved.value : resolved.value.replace(/[()]/g, "")],
   };
 }
 

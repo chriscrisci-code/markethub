@@ -41,4 +41,38 @@ for (const size of ["XS", "S", "M", "L", "2XL", "3XL", "4XL"]) {
   assert.equal(resolved.value.includes("kid"), false, size);
 }
 
+const kidsOnly = {
+  property_id: 513,
+  name: "Size",
+  scales: [
+    {
+      scale_id: 1,
+      display_name: "US kids' letter",
+      values: [
+        { value_id: 10, name: "S" },
+        { value_id: 11, name: "M" },
+      ],
+    },
+  ],
+};
+const kidsResolved = resolveVariationValue(kidsOnly, "S");
+assert.equal(kidsResolved.scaleId, undefined);
+assert.equal(kidsResolved.valueId, undefined);
+
+const splitScales = {
+  property_id: 513,
+  name: "Size",
+  scales: [
+    { scale_id: 1, display_name: "US kids' letter" },
+    { scale_id: 2, display_name: "Alpha" },
+  ],
+  possible_values: [
+    { value_id: 10, name: "S", scale_id: 1 },
+    { value_id: 21, name: "S", scale_id: 2 },
+    { value_id: 22, name: "M", scale_id: 2 },
+  ],
+};
+assert.equal(resolveVariationValue(splitScales, "S").valueId, 21);
+assert.equal(resolveVariationValue(splitScales, "M").scaleId, 2);
+
 console.log("adult size scale checks passed");

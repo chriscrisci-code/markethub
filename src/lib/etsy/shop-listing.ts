@@ -17,7 +17,7 @@ type TaxonomyNode = {
   children?: TaxonomyNode[];
 };
 
-type TaxonomyValue = { value_id: number; name: string };
+type TaxonomyValue = { value_id: number; name: string; scale_id?: number };
 
 type TaxonomyProperty = {
   property_id: number;
@@ -28,6 +28,7 @@ type TaxonomyProperty = {
   scales?: Array<{
     scale_id: number;
     display_name?: string;
+    description?: string;
     values?: TaxonomyValue[];
   }>;
 };
@@ -229,18 +230,39 @@ function namesMatch(candidate: string, wanted: string) {
 type SizeScale = NonNullable<TaxonomyProperty["scales"]>[number];
 
 function isKidsScale(scale: SizeScale) {
-  if (isKidsLabel(scale.display_name ?? "")) return true;
+  const label = `${scale.display_name ?? ""} ${scale.description ?? ""}`;
+  if (isKidsLabel(label)) return true;
   const values = scale.values ?? [];
   if (values.length === 0) return false;
   const kidsNamed = values.filter((value) => isKidsLabel(value.name)).length;
   return kidsNamed > 0 && kidsNamed >= values.length / 2;
 }
 
+/** possible_values carry the scale id when scales[].values is empty. */
+function scalesFromProperty(property: TaxonomyProperty): SizeScale[] {
+  const byId = new Map<number, SizeScale>();
+  for (const scale of property.scales ?? []) {
+    byId.set(scale.scale_id, { ...scale, values: [...(scale.values ?? [])] });
+  }
+  for (const value of property.possible_values ?? []) {
+    if (value.scale_id == null) continue;
+    const existing = byId.get(value.scale_id);
+    if (!existing) {
+      byId.set(value.scale_id, { scale_id: value.scale_id, values: [value] });
+      continue;
+    }
+    if (!existing.values?.some((entry) => entry.value_id === value.value_id)) {
+      existing.values = [...(existing.values ?? []), value];
+    }
+  }
+  return [...byId.values()];
+}
+
 /** Adult letter sizes live on a different Etsy scale than kids' letter sizes. */
 function adultSizeScale(property: TaxonomyProperty): SizeScale | null {
-  const ranked = (property.scales ?? [])
+  const ranked = scalesFromProperty(property)
     .map((scale) => {
-      const label = (scale.display_name ?? "").toLowerCase();
+      const label = `${scale.display_name ?? ""} ${scale.description ?? ""}`.toLowerCase();
       if (isKidsScale(scale)) return { scale, score: -1 };
       const names = new Set((scale.values ?? []).map((value) => canonicalSize(value.name)));
       let score = /alpha|letter|adult|unisex/.test(label) ? 20 : 0;
@@ -264,7 +286,7 @@ function matchValue(name: string, values: TaxonomyValue[], kidsIds?: Set<number>
 
 function kidsValueIds(property: TaxonomyProperty) {
   const ids = new Set<number>();
-  for (const scale of property.scales ?? []) {
+  for (const scale of scalesFromProperty(property)) {
     if (!isKidsScale(scale)) continue;
     for (const value of scale.values ?? []) ids.add(value.value_id);
   }
@@ -300,39 +322,53 @@ export async function getVariationProperties(
   return { ok: true as const, data: { color, size } };
 }
 
+function isSizeProperty(property: TaxonomyProperty) {
+  const label = propertyLabel(property);
+  return label === "size" || label.endsWith(" size");
+}
+
 export function resolveVariationValue(
   property: TaxonomyProperty,
   name: string
 ): ResolvedVariation {
-  const adult = adultSizeScale(property);
-  const kidsIds = kidsValueIds(property);
-  const values = adult?.values?.length
-    ? adult.values
-    : [
-        ...(property.possible_values ?? []),
-        ...(property.scales ?? [])
-          .filter((scale) => !isKidsScale(scale))
-          .flatMap((scale) => scale.values ?? []),
-      ];
-  const matched = matchValue(name, values, kidsIds);
-  if (!matched) {
+  const propertyName = property.display_name || property.name;
+  if (isSizeProperty(property)) {
+    const adult = adultSizeScale(property);
+    const matched = adult?.values?.length
+      ? matchValue(name, adult.values, kidsValueIds(property))
+      : undefined;
+    if (!adult || !matched) {
+      return { propertyId: property.property_id, propertyName, value: name };
+    }
     return {
       propertyId: property.property_id,
-      propertyName: property.display_name || property.name,
-      value: name,
+      propertyName,
+      scaleId: adult.scale_id,
+      valueId: matched.value_id,
+      value: matched.name,
     };
   }
-  const scale =
-    adult ??
-    property.scales?.find(
-      (entry) =>
-        !isKidsScale(entry) &&
-        entry.values?.some((value) => value.value_id === matched.value_id)
-    );
+
+  const kidsIds = kidsValueIds(property);
+  const values = [
+    ...(property.possible_values ?? []),
+    ...scalesFromProperty(property)
+      .filter((scale) => !isKidsScale(scale))
+      .flatMap((scale) => scale.values ?? []),
+  ];
+  const matched = matchValue(name, values, kidsIds);
+  if (!matched) {
+    return { propertyId: property.property_id, propertyName, value: name };
+  }
+  const scale = scalesFromProperty(property).find(
+    (entry) =>
+      !isKidsScale(entry) &&
+      entry.values?.some((value) => value.value_id === matched.value_id)
+  );
   return {
     propertyId: property.property_id,
-    propertyName: property.display_name || property.name,
-    scaleId: scale?.scale_id,
+    propertyName,
+    scaleId: matched.scale_id ?? scale?.scale_id,
     valueId: matched.value_id,
     value: matched.name,
   };
