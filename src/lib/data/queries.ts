@@ -17,14 +17,24 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       supabase
         .from("orders")
         .select("id", { count: "exact", head: true })
-        .in("status", ["pending", "processing"]),
+        .in("status", ["pending", "processing"])
+        .is("archived_at", null),
     ]);
+
+  let ordersNeedingAttention = attentionResult.count ?? 0;
+  if (attentionResult.error && missingArchiveColumn(attentionResult.error.message)) {
+    const fallback = await supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["pending", "processing"]);
+    ordersNeedingAttention = fallback.count ?? 0;
+  }
 
   return {
     totalItems: itemsResult.count ?? 0,
     publishedItems: publishedResult.count ?? 0,
     totalOrders: ordersResult.count ?? 0,
-    ordersNeedingAttention: attentionResult.count ?? 0,
+    ordersNeedingAttention,
   };
 }
 
@@ -279,21 +289,43 @@ export async function getMockupUrl(storagePath: string): Promise<string | null> 
   return data?.signedUrl ?? null;
 }
 
-export async function getOrders(): Promise<OrderWithRelations[]> {
+const orderSelect = `
+  *,
+  order_line_items (*),
+  fulfillment_jobs (*),
+  order_costs (*),
+  source_connector:source_connector_key (display_name)
+`;
+
+function missingArchiveColumn(message: string) {
+  return message.toLowerCase().includes("archived_at");
+}
+
+export async function getOrders(
+  view: "open" | "archived" = "open"
+): Promise<OrderWithRelations[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("orders")
-    .select(
-      `
-      *,
-      order_line_items (*),
-      fulfillment_jobs (*),
-      order_costs (*),
-      source_connector:source_connector_key (display_name)
-    `
-    )
+    .select(orderSelect)
     .order("created_at", { ascending: false });
+  query =
+    view === "archived"
+      ? query.not("archived_at", "is", null)
+      : query.is("archived_at", null);
+
+  let { data, error } = await query;
+
+  if (error && missingArchiveColumn(error.message)) {
+    if (view === "archived") return [];
+    const fallback = await supabase
+      .from("orders")
+      .select(orderSelect)
+      .order("created_at", { ascending: false });
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   if (error) {
     console.error("getOrders error:", error.message);
@@ -310,15 +342,7 @@ export async function getOrder(
 
   const { data, error } = await supabase
     .from("orders")
-    .select(
-      `
-      *,
-      order_line_items (*),
-      fulfillment_jobs (*),
-      order_costs (*),
-      source_connector:source_connector_key (display_name)
-    `
-    )
+    .select(orderSelect)
     .eq("id", orderId)
     .maybeSingle();
 

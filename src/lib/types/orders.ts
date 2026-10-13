@@ -30,6 +30,7 @@ export interface Order {
     country?: string;
   };
   status: OrderStatus;
+  archived_at?: string | null;
   sale_amount_cents: number;
   created_at: string;
   updated_at: string;

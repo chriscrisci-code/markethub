@@ -27,7 +27,10 @@ export default async function OrderDetailPage({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm text-muted-foreground">
-            <Link href="/orders" className="hover:underline">
+            <Link
+              href={order.archived_at ? "/orders?view=archived" : "/orders"}
+              className="hover:underline"
+            >
               Orders
             </Link>
           </p>
@@ -46,6 +49,7 @@ export default async function OrderDetailPage({
           orderId={order.id}
           status={order.status}
           hasFulfillmentJob={Boolean(job)}
+          archived={Boolean(order.archived_at)}
         />
       </div>
 

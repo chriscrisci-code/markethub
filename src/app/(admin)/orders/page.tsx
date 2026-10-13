@@ -10,13 +10,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { OrderStatusActions } from "@/components/admin/order-actions";
 import { simulateMarketplaceOrder } from "@/lib/actions/orders";
 import { getOrders } from "@/lib/data/queries";
 import { formatCents } from "@/lib/domain/format";
 import { calculateOrderProfit } from "@/lib/domain/profit";
 
-export default async function OrdersPage() {
-  const orders = await getOrders();
+export default async function OrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
+  const { view } = await searchParams;
+  const archived = view === "archived";
+  const orders = await getOrders(archived ? "archived" : "open");
 
   return (
     <div className="space-y-6">
@@ -25,6 +32,20 @@ export default async function OrdersPage() {
           <h1 className="text-3xl font-semibold tracking-tight">Orders</h1>
           <p className="mt-2 text-muted-foreground">
             Normalized orders from every sales channel.
+          </p>
+          <p className="mt-2 text-sm">
+            {archived ? (
+              <Link href="/orders" className="text-muted-foreground hover:underline">
+                Open orders
+              </Link>
+            ) : (
+              <Link
+                href="/orders?view=archived"
+                className="text-muted-foreground hover:underline"
+              >
+                Archived
+              </Link>
+            )}
           </p>
         </div>
         <form action={simulateMarketplaceOrder}>
@@ -38,15 +59,18 @@ export default async function OrdersPage() {
       {orders.length === 0 ? (
         <div className="rounded-xl border border-dashed p-12 text-center">
           <p className="text-muted-foreground">
-            No orders yet. Publish an item, then simulate a marketplace order to
-            prove the fulfillment loop.
+            {archived
+              ? "No archived orders."
+              : "No open orders. Publish an item, then simulate a marketplace order to prove the fulfillment loop."}
           </p>
-          <form action={simulateMarketplaceOrder} className="mt-4">
-            <Button type="submit">
-              <Plus className="size-4" />
-              Simulate Order
-            </Button>
-          </form>
+          {archived ? null : (
+            <form action={simulateMarketplaceOrder} className="mt-4">
+              <Button type="submit">
+                <Plus className="size-4" />
+                Simulate Order
+              </Button>
+            </form>
+          )}
         </div>
       ) : (
         <div className="rounded-xl border bg-card">
@@ -59,6 +83,7 @@ export default async function OrdersPage() {
                 <TableHead>Sale</TableHead>
                 <TableHead>Est. Profit</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="w-48"> </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -100,6 +125,13 @@ export default async function OrdersPage() {
                       >
                         {order.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <OrderStatusActions
+                        orderId={order.id}
+                        status={order.status}
+                        archived={archived}
+                      />
                     </TableCell>
                   </TableRow>
                 );
