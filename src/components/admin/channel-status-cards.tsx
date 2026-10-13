@@ -9,14 +9,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ChannelStatus } from "@/lib/connectors/marketplace/types";
 
 function statusLabel(channel: ChannelStatus) {
+  if (channel.syncStatus === "published") return "Published";
   if (channel.connectorKey === "etsy") {
     if (channel.publicationState === "draft_ready") return "Draft on Etsy";
     if (channel.publicationState === "partially_synchronized") return "Draft incomplete";
     if (channel.publicationState === "publishing") return "Sending draft";
   }
   switch (channel.syncStatus) {
-    case "published":
-      return "Published";
     case "sync_pending":
       return "Sync Pending";
     case "sync_error":
@@ -27,6 +26,7 @@ function statusLabel(channel: ChannelStatus) {
 }
 
 function statusVariant(channel: ChannelStatus) {
+  if (channel.syncStatus === "published") return "default" as const;
   if (channel.publicationState === "draft_ready") return "default" as const;
   if (
     channel.publicationState === "partially_synchronized" ||
@@ -34,18 +34,20 @@ function statusVariant(channel: ChannelStatus) {
   ) {
     return "destructive" as const;
   }
-  if (channel.syncStatus === "published") return "default" as const;
   return "secondary" as const;
 }
 
-function channelHint(connectorKey: string) {
-  if (connectorKey === "etsy") {
+function channelHint(channel: ChannelStatus) {
+  if (channel.connectorKey === "etsy" && channel.syncStatus === "published") {
+    return "This listing is for sale on Etsy.";
+  }
+  if (channel.connectorKey === "etsy") {
     return "Publish draft sends this item to Etsy as a draft. It is not for sale until you make it live in Etsy. Clicking again updates the same draft.";
   }
-  if (connectorKey === "market-hub-store") {
+  if (channel.connectorKey === "market-hub-store") {
     return "Your Market Hub storefront. Storefront checkout comes later.";
   }
-  if (connectorKey === "mock-marketplace") {
+  if (channel.connectorKey === "mock-marketplace") {
     return "Simulated external shop for testing the hub.";
   }
   return "Publishes this item to this storefront.";
@@ -90,7 +92,11 @@ export function ChannelStatusCards({
         router.refresh();
         return;
       }
-      if (channel.connectorKey === "etsy" && action !== "unpublish") {
+      if (
+        channel.connectorKey === "etsy" &&
+        action !== "unpublish" &&
+        channel.syncStatus !== "published"
+      ) {
         toast.success(
           json?.warning ||
             `Draft saved on ${channel.displayName}. It is not for sale yet. Check the price and photos before making it live.`
@@ -167,7 +173,9 @@ export function ChannelStatusCards({
                       void runAction("update", channel);
                     }}
                   >
-                    {channel.connectorKey === "etsy" ? "Update draft" : "Update"}
+                    {channel.connectorKey === "etsy" && channel.syncStatus !== "published"
+                      ? "Update draft"
+                      : "Update"}
                   </Button>
                   {channel.connectorKey === "etsy" ? null : (
                     <Button
@@ -192,14 +200,18 @@ export function ChannelStatusCards({
                 target="_blank"
                 rel="noreferrer"
               >
-                Open draft on Etsy
+                {channel.connectorKey === "etsy" && channel.syncStatus === "published"
+                  ? "Open on Etsy"
+                  : channel.connectorKey === "etsy"
+                    ? "Open draft on Etsy"
+                    : "Open listing"}
               </a>
             ) : null}
             {channel.syncError ? (
               <p className="text-xs text-destructive">{channel.syncError}</p>
             ) : null}
             <p className="text-xs text-muted-foreground">
-              {channelHint(channel.connectorKey)}
+              {channelHint(channel)}
             </p>
           </CardContent>
         </Card>

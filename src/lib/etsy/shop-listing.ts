@@ -540,6 +540,33 @@ type ShopListingSummary = {
   url?: string;
 };
 
+export function etsyPublicListingUrl(listingId: string, url?: string | null) {
+  if (url && url.includes("/listing/")) return url;
+  return `https://www.etsy.com/listing/${listingId}`;
+}
+
+/** Active listings are the ones Etsy currently has for sale. */
+export async function listActiveShopListings(
+  config: EtsyConfig,
+  accessToken: string,
+  shopId: string
+) {
+  const limit = 100;
+  const listings: ShopListingSummary[] = [];
+  for (let offset = 0; offset < 1000; offset += limit) {
+    const page = await etsyGet<{ results?: ShopListingSummary[] }>(
+      config,
+      accessToken,
+      `/shops/${shopId}/listings?state=active&sort_on=updated&sort_order=desc&limit=${limit}&offset=${offset}`
+    );
+    if (!page.ok) return page;
+    const results = page.data.results ?? [];
+    listings.push(...results);
+    if (results.length < limit) break;
+  }
+  return { ok: true as const, data: listings };
+}
+
 /** Drafts are not returned by GET /listings/{id}. Find this id in the shop's own lists. */
 async function findShopListingByState(
   config: EtsyConfig,

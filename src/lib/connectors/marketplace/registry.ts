@@ -1,4 +1,4 @@
-import { etsyDraftEditorUrl } from "@/lib/etsy/shop-listing";
+import { etsyDraftEditorUrl, etsyPublicListingUrl } from "@/lib/etsy/shop-listing";
 import {
   etsyConnector,
   marketHubStoreConnector,
@@ -43,9 +43,13 @@ export function getChannelStatuses(
     const listing = listings.find((l) => l.connection_id === storefront.id);
     const syncStatus = listing?.sync_status ?? "not_published";
     const platform = platforms.find((p) => p.key === storefront.connector_key);
-    const hasEtsyDraft =
+    const etsyListingId =
       storefront.connector_key === "etsy" &&
-      Boolean(listing?.external_listing_id && /^\d+$/.test(listing.external_listing_id));
+      listing?.external_listing_id &&
+      /^\d+$/.test(listing.external_listing_id)
+        ? listing.external_listing_id
+        : null;
+    const etsyLive = Boolean(etsyListingId) && syncStatus === "published";
 
     return {
       connectionId: storefront.id,
@@ -54,15 +58,16 @@ export function getChannelStatuses(
       platformName: platform?.display_name ?? storefront.connector_key,
       syncStatus,
       publicationState: listing?.publication_state ?? null,
-      listingUrl:
-        hasEtsyDraft && listing?.external_listing_id
-          ? etsyDraftEditorUrl(listing.external_listing_id)
+      listingUrl: etsyLive
+        ? etsyPublicListingUrl(etsyListingId!, listing?.listing_url)
+        : etsyListingId
+          ? etsyDraftEditorUrl(etsyListingId)
           : (listing?.listing_url ?? null),
       syncError: listing?.sync_error ?? null,
-      canPublish: hasEtsyDraft
+      canPublish: etsyListingId
         ? false
         : syncStatus === "not_published" || syncStatus === "sync_error",
-      canUpdate: hasEtsyDraft || syncStatus === "published",
+      canUpdate: Boolean(etsyListingId) || syncStatus === "published",
     };
   });
 }

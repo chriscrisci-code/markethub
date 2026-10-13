@@ -1,10 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
+import { syncEtsyLiveListings } from "@/lib/etsy/sync-live";
 import { normalizePrintableAreas } from "@/lib/domain/artwork-sides";
 import type { DashboardStats, ItemWithRelations } from "@/lib/types/database";
 import type { OrderWithRelations } from "@/lib/types/orders";
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   const supabase = await createClient();
+  await syncEtsyLiveListings(supabase);
 
   const [itemsResult, publishedResult, ordersResult, attentionResult] =
     await Promise.all([
@@ -70,6 +72,7 @@ function missingStorefrontRelation(message: string) {
 
 export async function getItems(): Promise<ItemWithRelations[]> {
   const supabase = await createClient();
+  await syncEtsyLiveListings(supabase);
 
   let { data, error } = await supabase
     .from("items")
@@ -95,6 +98,7 @@ export async function getItems(): Promise<ItemWithRelations[]> {
 
 export async function getItem(itemId: string): Promise<ItemWithRelations | null> {
   const supabase = await createClient();
+  await syncEtsyLiveListings(supabase);
 
   let { data, error } = await supabase
     .from("items")

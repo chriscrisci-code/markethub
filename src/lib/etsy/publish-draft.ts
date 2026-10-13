@@ -7,6 +7,7 @@ import {
   createOrUpdateDraftListing,
   dollarsFromCents,
   etsyDraftEditorUrl,
+  etsyPublicListingUrl,
   getListingImageIds,
   getListingState,
   getShirtTaxonomyId,
@@ -430,18 +431,18 @@ export async function publishEtsyDraft(input: {
       `Etsy draft ${listingId} was saved, but Market Hub could not confirm it. ${confirmed.error}`
     );
   }
-  if (savedState === "active") {
-    return await rememberFailure(
-      supabase,
-      itemId,
-      connectionId,
-      listingId,
-      `Etsy listing ${listingId} is already live. Market Hub did not change it to active.`
-    );
-  }
-
-  const listingUrl = etsyDraftEditorUrl(listingId);
-  const publicationState = warnings.length > 0 ? "partially_synchronized" : "draft_ready";
+  const isLive = savedState === "active";
+  const listingUrl = isLive
+    ? etsyPublicListingUrl(
+        listingId,
+        confirmed.ok ? confirmed.data.url : null
+      )
+    : etsyDraftEditorUrl(listingId);
+  const publicationState = isLive
+    ? "live"
+    : warnings.length > 0
+      ? "partially_synchronized"
+      : "draft_ready";
 
   const { data: savedListing } = await supabase
     .from("channel_listings")
@@ -449,7 +450,7 @@ export async function publishEtsyDraft(input: {
       external_listing_id: listingId,
       listing_url: listingUrl,
       publication_state: publicationState,
-      sync_status: "sync_pending",
+      sync_status: isLive ? "published" : "sync_pending",
       sync_error: warnings.length > 0 ? warnings.join(" ") : null,
       last_synced_at: new Date().toISOString(),
     })
