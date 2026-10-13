@@ -191,17 +191,6 @@ function normalizeName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-const SIZE_ALIASES: Record<string, string> = {
-  s: "small",
-  m: "medium",
-  l: "large",
-  xl: "x large",
-  "2xl": "xx large",
-  "3xl": "xxx large",
-  "4xl": "xxxx large",
-  "5xl": "xxxxx large",
-};
-
 const KIDS_SIZE = /kid|infant|toddler|baby|youth|child|newborn/;
 const ADULT_LETTERS = ["xs", "s", "m", "l", "xl", "2xl", "3xl", "4xl", "5xl"];
 
@@ -213,21 +202,48 @@ function sizeKey(value: string) {
   return normalizeName(value).replace(/\s/g, "");
 }
 
+/** Pulls xs, s, m, l, xl, 2xl… out of labels like "S (US Letter)". */
+function canonicalSize(value: string) {
+  const text = value.toLowerCase().replace(/['’]/g, "");
+  const patterns: Array<[RegExp, string]> = [
+    [/\b5\s*xl\b|\bxxxxx[\s-]*large\b|\b5x\b/, "5xl"],
+    [/\b4\s*xl\b|\bxxxx[\s-]*large\b|\b4x\b/, "4xl"],
+    [/\b3\s*xl\b|\bxxx[\s-]*large\b|\b3x\b/, "3xl"],
+    [/\b2\s*xl\b|\bxx[\s-]*large\b|\b2x\b/, "2xl"],
+    [/\bxs\b|\bx[\s-]*small\b|\bextra[\s-]*small\b/, "xs"],
+    [/\bxl\b|\bx[\s-]*large\b|\bextra[\s-]*large\b/, "xl"],
+    [/\bsmall\b|(^|[^a-z0-9])s([^a-z0-9]|$)/, "s"],
+    [/\bmedium\b|(^|[^a-z0-9])m([^a-z0-9]|$)/, "m"],
+    [/\blarge\b|(^|[^a-z0-9])l([^a-z0-9]|$)/, "l"],
+  ];
+  for (const [pattern, key] of patterns) {
+    if (pattern.test(text)) return key;
+  }
+  return sizeKey(value);
+}
+
 function namesMatch(candidate: string, wanted: string) {
-  const alias = SIZE_ALIASES[wanted] ?? wanted;
-  return candidate === wanted || candidate === alias;
+  return canonicalSize(candidate) === canonicalSize(wanted);
 }
 
 type SizeScale = NonNullable<TaxonomyProperty["scales"]>[number];
+
+function isKidsScale(scale: SizeScale) {
+  if (isKidsLabel(scale.display_name ?? "")) return true;
+  const values = scale.values ?? [];
+  if (values.length === 0) return false;
+  const kidsNamed = values.filter((value) => isKidsLabel(value.name)).length;
+  return kidsNamed > 0 && kidsNamed >= values.length / 2;
+}
 
 /** Adult letter sizes live on a different Etsy scale than kids' letter sizes. */
 function adultSizeScale(property: TaxonomyProperty): SizeScale | null {
   const ranked = (property.scales ?? [])
     .map((scale) => {
-      const label = scale.display_name ?? "";
-      if (isKidsLabel(label)) return { scale, score: -1 };
-      const names = new Set((scale.values ?? []).map((value) => sizeKey(value.name)));
-      let score = /alpha|letter/.test(label.toLowerCase()) ? 20 : 0;
+      const label = (scale.display_name ?? "").toLowerCase();
+      if (isKidsScale(scale)) return { scale, score: -1 };
+      const names = new Set((scale.values ?? []).map((value) => canonicalSize(value.name)));
+      let score = /alpha|letter|adult|unisex/.test(label) ? 20 : 0;
       for (const size of ADULT_LETTERS) {
         if (names.has(size)) score += 1;
       }
@@ -238,12 +254,21 @@ function adultSizeScale(property: TaxonomyProperty): SizeScale | null {
   return ranked[0]?.scale ?? null;
 }
 
-function matchValue(name: string, values: TaxonomyValue[]) {
-  const wanted = sizeKey(name);
+function matchValue(name: string, values: TaxonomyValue[], kidsIds?: Set<number>) {
   return values.find((value) => {
     if (isKidsLabel(value.name)) return false;
-    return namesMatch(sizeKey(value.name), wanted);
+    if (kidsIds?.has(value.value_id)) return false;
+    return namesMatch(value.name, name);
   });
+}
+
+function kidsValueIds(property: TaxonomyProperty) {
+  const ids = new Set<number>();
+  for (const scale of property.scales ?? []) {
+    if (!isKidsScale(scale)) continue;
+    for (const value of scale.values ?? []) ids.add(value.value_id);
+  }
+  return ids;
 }
 
 export async function getVariationProperties(
@@ -280,15 +305,16 @@ export function resolveVariationValue(
   name: string
 ): ResolvedVariation {
   const adult = adultSizeScale(property);
+  const kidsIds = kidsValueIds(property);
   const values = adult?.values?.length
     ? adult.values
     : [
         ...(property.possible_values ?? []),
         ...(property.scales ?? [])
-          .filter((scale) => !isKidsLabel(scale.display_name ?? ""))
+          .filter((scale) => !isKidsScale(scale))
           .flatMap((scale) => scale.values ?? []),
       ];
-  const matched = matchValue(name, values);
+  const matched = matchValue(name, values, kidsIds);
   if (!matched) {
     return {
       propertyId: property.property_id,
@@ -300,7 +326,7 @@ export function resolveVariationValue(
     adult ??
     property.scales?.find(
       (entry) =>
-        !isKidsLabel(entry.display_name ?? "") &&
+        !isKidsScale(entry) &&
         entry.values?.some((value) => value.value_id === matched.value_id)
     );
   return {
